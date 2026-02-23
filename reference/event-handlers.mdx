@@ -1,18 +1,249 @@
 ---
 title: "Event Handlers"
-description: "@OnInsert, @OnUpdate, @OnDelete, and @OnChange annotations"
-icon: "bell"
+description: "Route Change Stream events to specific methods with @OnChange, @OnInsert, @OnUpdate, @OnDelete, and @OnReplace."
+icon: "bolt"
 ---
 
-<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+FlowWarden dispatches MongoDB Change Stream events to handler methods annotated with `@OnChange`, `@OnInsert`, `@OnUpdate`, `@OnDelete`, or `@OnReplace`. These annotations go on methods inside a [`@ChangeStream`](/reference/change-stream) class.
 
 ## Overview
 
-Typed event handler annotations let you react to specific Change Stream operation types.
+There are two types of handler annotations:
 
-| Annotation | Triggers on |
-|-----------|-------------|
-| `@OnInsert` | Document inserts |
-| `@OnUpdate` | Document updates |
-| `@OnDelete` | Document deletes |
-| `@OnChange` | All operation types |
+| Type | Annotations | Purpose |
+|------|-------------|---------|
+| **Generic** | `@OnChange` | Catches all (or filtered) operation types |
+| **Typed** | `@OnInsert`, `@OnUpdate`, `@OnDelete`, `@OnReplace` | Routes events by specific operation type |
+
+## Dispatch Priority
+
+When an event arrives, FlowWarden resolves the handler in this order:
+
+1. **Typed handler** matching the operation type (`@OnInsert` for INSERT, `@OnUpdate` for UPDATE, etc.)
+2. **`@OnChange` fallback** — only if no typed handler matches, and the event passes the `operationTypes` filter
+
+```
+INSERT event  → @OnInsert found?  → YES → call @OnInsert
+                                   → NO  → @OnChange exists? → call @OnChange
+```
+
+<Note>
+  Typed handlers always take priority. `@OnChange` is only invoked for operation types that have **no dedicated typed handler** in the class.
+</Note>
+
+## @OnChange
+
+Generic handler for all Change Stream event types. Acts as a catch-all when no typed handler matches.
+
+```java
+@ChangeStream(documentType = Order.class)
+public class OrderHandler {
+
+    @OnChange
+    void handle(ChangeStreamContext<Order> ctx) {
+        System.out.println(ctx.getOperationType() + " on " + ctx.getCollectionName());
+    }
+}
+```
+
+**Rules:**
+- Only **one** `@OnChange` method is allowed per `@ChangeStream` class.
+- Signature must be `void method(ChangeStreamContext ctx)` — only the `CONTEXT_ONLY` style is supported.
+
+### Filtering by Operation Type
+
+Use the `operationTypes` attribute to restrict which events `@OnChange` handles:
+
+```java
+@OnChange(operationTypes = { OperationType.INSERT, OperationType.UPDATE })
+void handleWriteOps(ChangeStreamContext<Order> ctx) {
+    // Only called for INSERT and UPDATE — not DELETE or REPLACE
+}
+```
+
+When `operationTypes` is empty (the default), all operation types are accepted.
+
+## Typed Handlers
+
+### @OnInsert
+
+Called when a new document is inserted into the collection.
+
+```java
+@OnInsert
+void onInsert(Order doc, ChangeStreamContext<Order> ctx) {
+    log.info("New order: {}", doc.getId());
+}
+```
+
+### @OnUpdate
+
+Called when an existing document is updated.
+
+```java
+@OnUpdate
+void onUpdate(ChangeStreamContext<Order> ctx) {
+    log.info("Order updated: {}", ctx.getDocumentKey());
+}
+```
+
+<Tip>
+  For UPDATE events, `fullDocument` may be `null` by default — MongoDB only sends the change delta. To get the full document on updates, set `fullDocument = FullDocumentMode.UPDATE_LOOKUP` on `@ChangeStream` (note: this attribute is declared but not yet wired in the runtime — the stream currently uses the MongoDB server default).
+</Tip>
+
+### @OnDelete
+
+Called when a document is deleted.
+
+```java
+@OnDelete
+void onDelete(ChangeStreamContext<Order> ctx) {
+    log.info("Order deleted: {}", ctx.getDocumentKey());
+}
+```
+
+<Warning>
+  For DELETE events, the full document is **always `null`**. If you use a document-typed signature like `void onDelete(Order doc, ...)`, the `doc` parameter will be `null`. Prefer the `CONTEXT_ONLY` signature and use `ctx.getDocumentKey()` to identify the deleted document.
+</Warning>
+
+### @OnReplace
+
+Called when a document is replaced entirely (e.g. via `MongoTemplate.save()` on an existing document).
+
+```java
+@OnReplace
+void onReplace(Order doc, ChangeStreamContext<Order> ctx) {
+    log.info("Order replaced: {}", doc.getId());
+}
+```
+
+### Rules for Typed Handlers
+
+- At most **one** method per typed annotation per class (e.g. one `@OnInsert`, one `@OnUpdate`, etc.)
+- If no typed handler matches the event, `@OnChange` is used as fallback (if present)
+- If neither a typed handler nor `@OnChange` matches, the event is silently skipped
+
+## Supported Signatures
+
+Typed handler methods (`@OnInsert`, `@OnUpdate`, `@OnDelete`, `@OnReplace`) support three signature styles:
+
+| Style | Signature | Description |
+|-------|-----------|-------------|
+| `CONTEXT_ONLY` | `void handle(ChangeStreamContext<T> ctx)` | Access context; get the document via `ctx.getFullDocument()`. |
+| `DOCUMENT_ONLY` | `void handle(T doc)` | Receive the deserialized document directly. |
+| `DOCUMENT_AND_CONTEXT` | `void handle(T doc, ChangeStreamContext<T> ctx)` | Both the document and the context. |
+
+`@OnChange` only supports `CONTEXT_ONLY`: `void handle(ChangeStreamContext ctx)`.
+
+<Warning>
+  `DOCUMENT_ONLY` and `DOCUMENT_AND_CONTEXT` signatures require a concrete `documentType` on `@ChangeStream` (not `Document.class`). Otherwise, startup fails with a validation error.
+</Warning>
+
+## Examples
+
+### Typed Handlers with @OnChange Fallback
+
+This example handles INSERT, UPDATE, and DELETE with typed handlers, and uses `@OnChange` as a fallback for REPLACE events.
+
+```java
+@ChangeStream(name = "typed-order-capture", documentType = Order.class)
+public class TypedOrderHandler {
+
+    @OnInsert
+    void onInsert(Order doc, ChangeStreamContext<Order> ctx) {
+        log.info("New order: {}", doc.getId());
+    }
+
+    @OnUpdate
+    void onUpdate(ChangeStreamContext<Order> ctx) {
+        log.info("Order updated: {}", ctx.getDocumentKey());
+    }
+
+    @OnDelete
+    void onDelete(ChangeStreamContext<Order> ctx) {
+        log.info("Order deleted: {}", ctx.getDocumentKey());
+    }
+
+    @OnChange
+    void onFallback(ChangeStreamContext<Order> ctx) {
+        // Called for REPLACE and any other unhandled operation type
+        log.info("Fallback: {} on {}", ctx.getOperationType(), ctx.getDocumentKey());
+    }
+}
+```
+
+### Minimal — Single @OnChange
+
+The simplest form: one handler for all event types.
+
+```java
+@ChangeStream(documentType = Order.class)
+public class OrderHandler {
+
+    @OnChange
+    void handle(ChangeStreamContext<Order> ctx) {
+        System.out.println(ctx.summary());
+    }
+}
+```
+
+### Event Capture for Testing
+
+From the `flowwarden-samples` project — a reusable handler that captures events for test assertions:
+
+```java
+@ChangeStream(documentType = Order.class)
+public class OrderEventCapture {
+
+    private final List<CapturedEvent> events = new CopyOnWriteArrayList<>();
+
+    @OnChange
+    void onOrderChange(ChangeStreamContext ctx) {
+        Order order = (Order) ctx.getFullDocument(Order.class).orElse(null);
+        events.add(new CapturedEvent(
+                ctx.getOperationType(),
+                order,
+                ctx.getCollectionName()
+        ));
+    }
+
+    public List<CapturedEvent> getEvents() {
+        return events;
+    }
+
+    public record CapturedEvent(
+            OperationType operationType,
+            Order fullDocument,
+            String collectionName
+    ) {}
+}
+```
+
+## Validation Errors
+
+FlowWarden validates handler methods at startup. Here are the common errors:
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "must have at least one handler method" | `@ChangeStream` class has no `@OnChange`, `@OnInsert`, etc. | Add at least one handler method. |
+| "must have exactly one @OnChange method" | Multiple `@OnChange` methods in the same class. | Keep only one `@OnChange`. |
+| "must have at most one @OnInsert method" | Duplicate typed handler for the same operation. | Keep only one per type. |
+| "uses a document-typed signature but documentType is Document.class" | Handler uses `(T doc, ...)` but no concrete `documentType` is set. | Set `documentType = YourClass.class` on `@ChangeStream`. |
+| "has invalid signature" | Method parameters don't match any supported style. | Use one of the three supported signatures. |
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="@ChangeStream" icon="satellite-dish" href="/reference/change-stream">
+    The parent annotation that declares a Change Stream handler class.
+  </Card>
+  <Card title="Handler Signatures" icon="signature" href="/reference/handler-signatures">
+    Detailed reference for all supported method signatures.
+  </Card>
+  <Card title="ChangeStreamContext" icon="circle-info" href="/reference/change-stream-context">
+    The context object passed to every handler — access document, metadata, and operations.
+  </Card>
+  <Card title="@Filter" icon="filter" href="/reference/filter">
+    Server-side filtering to reduce the events reaching your handlers.
+  </Card>
+</CardGroup>
