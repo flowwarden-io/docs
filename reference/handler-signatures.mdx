@@ -1,0 +1,16 @@
+---
+title: "Handler Signatures"
+description: "Supported method signatures for stream handlers"
+icon: "code"
+---
+
+<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+
+## Supported Signatures
+
+| Signature | Mode |
+|-----------|------|
+| `void handle(ChangeStreamContext<T> ctx)` | Imperative |
+| `void handle(ChangeStreamContext<T> ctx, MongoTemplate mongo)` | Imperative with DB access |
+| `Mono<Void> handle(ChangeStreamContext<T> ctx)` | Reactive |
+| `CompletableFuture<Void> handle(ChangeStreamContext<T> ctx)` | Async |

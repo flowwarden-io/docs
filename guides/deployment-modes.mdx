@@ -1,0 +1,15 @@
+---
+title: "Deployment Modes"
+description: "SINGLE_LEADER, ALL_INSTANCES, and PARTITIONED strategies"
+icon: "server"
+---
+
+<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+
+## Overview
+
+FlowWarden supports three deployment strategies for multi-instance environments:
+
+- **SINGLE_LEADER** — One active instance, others on standby (default)
+- **ALL_INSTANCES** — Every instance receives all events
+- **PARTITIONED** — Horizontal scaling with document key-based distribution

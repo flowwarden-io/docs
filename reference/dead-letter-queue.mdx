@@ -1,0 +1,18 @@
+---
+title: "@DeadLetterQueue"
+description: "Route failed events to a Dead Letter Queue"
+icon: "box-archive"
+---
+
+<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+
+## Usage
+
+```java
+@ChangeStream(collection = "orders")
+@RetryPolicy(maxRetries = 3)
+@DeadLetterQueue
+public class OrderStreamHandler {
+    // ...
+}
+```

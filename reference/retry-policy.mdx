@@ -1,0 +1,17 @@
+---
+title: "@RetryPolicy"
+description: "Configure exponential backoff retry for failed events"
+icon: "rotate-right"
+---
+
+<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+
+## Usage
+
+```java
+@ChangeStream(collection = "orders")
+@RetryPolicy(maxRetries = 3, backoff = "PT1S")
+public class OrderStreamHandler {
+    // ...
+}
+```

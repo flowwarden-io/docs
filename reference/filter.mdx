@@ -1,0 +1,17 @@
+---
+title: "@Filter"
+description: "Filter Change Stream events with MongoDB pipelines"
+icon: "filter"
+---
+
+<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+
+## Usage
+
+```java
+@ChangeStream(collection = "orders")
+@Filter(pipeline = "{ $match: { 'fullDocument.status': 'PAID' } }", mode = FilterMode.SERVER)
+public class PaidOrderHandler {
+    // ...
+}
+```

@@ -1,0 +1,14 @@
+---
+title: "Imperative vs Reactive"
+description: "Choose between blocking and reactive execution modes"
+icon: "arrows-split-up-and-left"
+---
+
+<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+
+## Overview
+
+FlowWarden supports two execution modes configured via `flowwarden.default-mode`:
+
+- **IMPERATIVE** — uses `MongoTemplate`, blocking handlers
+- **REACTIVE** — uses `ReactiveMongoTemplate`, returns `Mono<Void>` or `Flux`
