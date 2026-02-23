@@ -1,97 +1,43 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "FlowWarden Stream"
+description: "Declarative MongoDB Change Streams for Spring Boot"
 ---
 
-## Setting up
+## What is FlowWarden?
 
-Get your documentation site up and running in minutes.
+FlowWarden Stream Core is an annotation-driven library that brings **declarative MongoDB Change Streams** to Spring Boot. Zero additional dependencies — just Spring Data MongoDB.
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Add the dependency and create your first handler in minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="How it Works" icon="gears" href="/concepts/how-it-works">
+    Understand Change Streams, resume tokens, and the FlowWarden lifecycle.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Annotations Reference" icon="tags" href="/reference/change-stream">
+    Full reference for all FlowWarden annotations.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Guides" icon="book" href="/guides/imperative-vs-reactive">
+    Step-by-step guides for filtering, retry, deployment modes, and more.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Key Features
 
-Everything you need to create world-class documentation.
+- **`@ChangeStream` declarative handlers** with typed event callbacks
+- **Automatic checkpoint & resume** using MongoDB-backed resume tokens
+- **Dead Letter Queue** for failed events with retention policies
+- **Exponential backoff retry** via `@RetryPolicy`
+- **Server-side filtering** with `@Filter`
+- **Dual execution modes** — Imperative (Spring MVC) or Reactive (WebFlux)
+- **Multi-instance deployment** — SINGLE_LEADER, ALL_INSTANCES, PARTITIONED
+- **Zero additional dependencies** — only requires Spring Data MongoDB
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Compatibility
 
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+| Requirement | Version |
+|-------------|---------|
+| Java | 17+ (recommend 21+) |
+| Spring Boot | 3.2.x+ |
+| Spring Data MongoDB | 4.2.x+ |
+| MongoDB | 6.0+ (Replica Set) |
