@@ -1,0 +1,25 @@
+---
+title: "Cache Invalidation"
+description: "Invalidate caches in real time across all instances"
+icon: "bolt"
+---
+
+<Note>This page is a placeholder. Full content coming soon.</Note>
+
+## Overview
+
+Use FlowWarden in **`ALL_INSTANCES`** deployment mode to broadcast cache invalidation events to every running instance of your application.
+
+```mermaid
+flowchart TD
+    A[(MongoDB)] -->|Change Stream| B[FlowWarden]
+    B --> C[Instance 1 — evict cache]
+    B --> D[Instance 2 — evict cache]
+    B --> E[Instance N — evict cache]
+```
+
+## Why FlowWarden
+
+- **`ALL_INSTANCES` mode** ensures every node receives the event
+- **Sub-second latency** — no polling, no TTL guessing
+- **`@Filter`** to react only to updates on cacheable collections

@@ -1,0 +1,25 @@
+---
+title: "Event-Driven Notifications"
+description: "Trigger notifications on database changes in real time"
+icon: "bell"
+---
+
+<Note>This page is a placeholder. Full content coming soon.</Note>
+
+## Overview
+
+Use FlowWarden to send **emails, push notifications, or webhooks** whenever specific documents are inserted or updated in MongoDB.
+
+```mermaid
+flowchart LR
+    A[(MongoDB)] -->|Change Stream| B[FlowWarden]
+    B -->|@OnInsert| C[Send welcome email]
+    B -->|@OnUpdate| D[Push notification]
+    B -->|@OnChange| E[Fire webhook]
+```
+
+## Why FlowWarden
+
+- **`@OnInsert` / `@OnUpdate`** handlers target exactly the events you care about
+- **Retry with exponential backoff** handles transient email/API failures
+- **DLQ** ensures no notification is silently dropped

@@ -1,0 +1,25 @@
+---
+title: "CQRS"
+description: "Build read-model projections from MongoDB Change Streams"
+icon: "arrows-split-up-and-left"
+---
+
+<Note>This page is a placeholder. Full content coming soon.</Note>
+
+## Overview
+
+Use FlowWarden to maintain **read-model projections** in a CQRS architecture. Write to your command collection; FlowWarden listens to Change Streams and updates denormalized read views in real time.
+
+```mermaid
+flowchart LR
+    A[Command Service] -->|write| B[(Orders collection)]
+    B -->|Change Stream| C[FlowWarden]
+    C -->|project| D[(OrderSummary view)]
+    E[Query Service] -->|read| D
+```
+
+## Why FlowWarden
+
+- **Checkpointing** ensures no event is lost between restarts
+- **Retry + DLQ** handles transient projection failures
+- **Filtering** lets you react only to relevant operation types

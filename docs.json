@@ -38,6 +38,21 @@
         ]
       },
       {
+        "tab": "Use Cases",
+        "groups": [
+          {
+            "group": "Patterns",
+            "pages": [
+              "use-cases/cqrs",
+              "use-cases/cdc",
+              "use-cases/cache-invalidation",
+              "use-cases/event-driven-notifications",
+              "use-cases/audit-log"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Reference",
         "groups": [
           {
