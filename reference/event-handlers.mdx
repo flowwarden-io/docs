@@ -35,7 +35,8 @@ INSERT event  → @OnInsert found?  → YES → call @OnInsert
 
 Generic handler for all Change Stream event types. Acts as a catch-all when no typed handler matches.
 
-```java
+<CodeGroup>
+```java Imperative
 @ChangeStream(documentType = Order.class)
 public class OrderHandler {
 
@@ -46,9 +47,22 @@ public class OrderHandler {
 }
 ```
 
+```java Reactive
+@ChangeStream(documentType = Order.class)
+public class OrderHandler {
+
+    @OnChange
+    Mono<Void> handle(ChangeStreamContext<Order> ctx) {
+        return Mono.fromRunnable(() ->
+            System.out.println(ctx.getOperationType() + " on " + ctx.getCollectionName()));
+    }
+}
+```
+</CodeGroup>
+
 **Rules:**
 - Only **one** `@OnChange` method is allowed per `@ChangeStream` class.
-- Signature must be `void method(ChangeStreamContext ctx)` — only the `CONTEXT_ONLY` style is supported.
+- Signature must use the `CONTEXT_ONLY` style — `void handle(ChangeStreamContext ctx)` or `Mono<Void> handle(ChangeStreamContext ctx)`.
 
 ### Filtering by Operation Type
 
@@ -69,26 +83,46 @@ When `operationTypes` is empty (the default), all operation types are accepted.
 
 Called when a new document is inserted into the collection.
 
-```java
+<CodeGroup>
+```java Imperative
 @OnInsert
 void onInsert(Order doc, ChangeStreamContext<Order> ctx) {
     log.info("New order: {}", doc.getId());
 }
 ```
 
+```java Reactive
+@OnInsert
+Mono<Void> onInsert(Order doc, ChangeStreamContext<Order> ctx) {
+    return Mono.fromRunnable(() ->
+        log.info("New order: {}", doc.getId()));
+}
+```
+</CodeGroup>
+
 ### @OnUpdate
 
 Called when an existing document is updated.
 
-```java
+<CodeGroup>
+```java Imperative
 @OnUpdate
 void onUpdate(ChangeStreamContext<Order> ctx) {
     log.info("Order updated: {}", ctx.getDocumentKey());
 }
 ```
 
+```java Reactive
+@OnUpdate
+Mono<Void> onUpdate(ChangeStreamContext<Order> ctx) {
+    return Mono.fromRunnable(() ->
+        log.info("Order updated: {}", ctx.getDocumentKey()));
+}
+```
+</CodeGroup>
+
 <Tip>
-  For UPDATE events, `fullDocument` may be `null` by default — MongoDB only sends the change delta. To get the full document on updates, set `fullDocument = FullDocumentMode.UPDATE_LOOKUP` on `@ChangeStream` (note: this attribute is declared but not yet wired in the runtime — the stream currently uses the MongoDB server default).
+  For UPDATE events, `fullDocument` may be `null` by default — MongoDB only sends the change delta. To get the full document on updates, enable `UPDATE_LOOKUP` on the MongoDB Change Stream options.
 </Tip>
 
 ### @OnDelete
@@ -125,19 +159,55 @@ void onReplace(Order doc, ChangeStreamContext<Order> ctx) {
 
 ## Supported Signatures
 
-Typed handler methods (`@OnInsert`, `@OnUpdate`, `@OnDelete`, `@OnReplace`) support three signature styles:
+### Parameter Styles
+
+Typed handler methods (`@OnInsert`, `@OnUpdate`, `@OnDelete`, `@OnReplace`) support three parameter styles:
 
 | Style | Signature | Description |
 |-------|-----------|-------------|
-| `CONTEXT_ONLY` | `void handle(ChangeStreamContext<T> ctx)` | Access context; get the document via `ctx.getFullDocument()`. |
-| `DOCUMENT_ONLY` | `void handle(T doc)` | Receive the deserialized document directly. |
-| `DOCUMENT_AND_CONTEXT` | `void handle(T doc, ChangeStreamContext<T> ctx)` | Both the document and the context. |
+| `CONTEXT_ONLY` | `handle(ChangeStreamContext<T> ctx)` | Access context; get the document via `ctx.getFullDocument()`. |
+| `DOCUMENT_ONLY` | `handle(T doc)` | Receive the deserialized document directly. |
+| `DOCUMENT_AND_CONTEXT` | `handle(T doc, ChangeStreamContext<T> ctx)` | Both the document and the context. |
 
-`@OnChange` only supports `CONTEXT_ONLY`: `void handle(ChangeStreamContext ctx)`.
+`@OnChange` only supports `CONTEXT_ONLY`.
 
 <Warning>
   `DOCUMENT_ONLY` and `DOCUMENT_AND_CONTEXT` signatures require a concrete `documentType` on `@ChangeStream` (not `Document.class`). Otherwise, startup fails with a validation error.
 </Warning>
+
+### Return Types — Mode Exclusivity
+
+Handler methods must use the return type that matches the configured `flowwarden.default-mode`:
+
+| Mode | Required Return Type | Description |
+|------|---------------------|-------------|
+| `IMPERATIVE` | `void` | Blocking handler. `Mono<Void>` is **rejected** at startup. |
+| `REACTIVE` | `Mono<Void>` | Non-blocking handler. `void` is **rejected** at startup. |
+
+<Warning>
+  Mixing return types is **not allowed**. All handler methods in an application must consistently use either `void` (imperative) or `Mono<Void>` (reactive), matching the `flowwarden.default-mode`. A mismatch causes a `BeanCreationException` at startup.
+</Warning>
+
+This gives the following full signature matrix:
+
+<Tabs>
+  <Tab title="Imperative (void)">
+    | Style | Signature |
+    |-------|-----------|
+    | `CONTEXT_ONLY` | `void handle(ChangeStreamContext<T> ctx)` |
+    | `DOCUMENT_ONLY` | `void handle(T doc)` |
+    | `DOCUMENT_AND_CONTEXT` | `void handle(T doc, ChangeStreamContext<T> ctx)` |
+  </Tab>
+  <Tab title="Reactive (Mono)">
+    | Style | Signature |
+    |-------|-----------|
+    | `CONTEXT_ONLY` | `Mono<Void> handle(ChangeStreamContext<T> ctx)` |
+    | `DOCUMENT_ONLY` | `Mono<Void> handle(T doc)` |
+    | `DOCUMENT_AND_CONTEXT` | `Mono<Void> handle(T doc, ChangeStreamContext<T> ctx)` |
+  </Tab>
+</Tabs>
+
+Any other return type (e.g. `CompletableFuture`, `Flux`, `String`) is rejected at startup.
 
 ## Examples
 
@@ -145,7 +215,8 @@ Typed handler methods (`@OnInsert`, `@OnUpdate`, `@OnDelete`, `@OnReplace`) supp
 
 This example handles INSERT, UPDATE, and DELETE with typed handlers, and uses `@OnChange` as a fallback for REPLACE events.
 
-```java
+<CodeGroup>
+```java Imperative
 @ChangeStream(name = "typed-order-capture", documentType = Order.class)
 public class TypedOrderHandler {
 
@@ -171,6 +242,37 @@ public class TypedOrderHandler {
     }
 }
 ```
+
+```java Reactive
+@ChangeStream(name = "typed-order-capture", documentType = Order.class)
+public class TypedOrderHandler {
+
+    @OnInsert
+    Mono<Void> onInsert(Order doc, ChangeStreamContext<Order> ctx) {
+        return Mono.fromRunnable(() ->
+            log.info("New order: {}", doc.getId()));
+    }
+
+    @OnUpdate
+    Mono<Void> onUpdate(ChangeStreamContext<Order> ctx) {
+        return Mono.fromRunnable(() ->
+            log.info("Order updated: {}", ctx.getDocumentKey()));
+    }
+
+    @OnDelete
+    Mono<Void> onDelete(ChangeStreamContext<Order> ctx) {
+        return Mono.fromRunnable(() ->
+            log.info("Order deleted: {}", ctx.getDocumentKey()));
+    }
+
+    @OnChange
+    Mono<Void> onFallback(ChangeStreamContext<Order> ctx) {
+        return Mono.fromRunnable(() ->
+            log.info("Fallback: {} on {}", ctx.getOperationType(), ctx.getDocumentKey()));
+    }
+}
+```
+</CodeGroup>
 
 ### Minimal — Single @OnChange
 
@@ -230,6 +332,9 @@ FlowWarden validates handler methods at startup. Here are the common errors:
 | "must have at most one @OnInsert method" | Duplicate typed handler for the same operation. | Keep only one per type. |
 | "uses a document-typed signature but documentType is Document.class" | Handler uses `(T doc, ...)` but no concrete `documentType` is set. | Set `documentType = YourClass.class` on `@ChangeStream`. |
 | "has invalid signature" | Method parameters don't match any supported style. | Use one of the three supported signatures. |
+| "has unsupported return type" | Return type is not `void` or `Mono<Void>`. | Use `void` (imperative) or `Mono<Void>` (reactive). |
+| "returns Mono but mode is IMPERATIVE" | `Mono<Void>` handler in IMPERATIVE mode. | Switch to `void` return type, or change `flowwarden.default-mode` to `REACTIVE`. |
+| "returns void but mode is REACTIVE" | `void` handler in REACTIVE mode. | Switch to `Mono<Void>` return type, or change `flowwarden.default-mode` to `IMPERATIVE`. |
 
 ## See Also
 
