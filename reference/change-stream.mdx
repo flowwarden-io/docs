@@ -1,16 +1,296 @@
 ---
 title: "@ChangeStream"
-description: "Declare a MongoDB Change Stream handler"
-icon: "bolt"
+description: "Declare a MongoDB Change Stream handler with a single annotation."
+icon: "satellite-dish"
 ---
 
-<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+The `@ChangeStream` annotation is the foundation of the FlowWarden programming model. It turns any class into a Spring-managed Change Stream handler that watches a MongoDB collection for real-time data changes.
 
-## Usage
+## Basic Usage
+
+Annotate a class with `@ChangeStream` and add at least one event handler method (`@OnChange`, `@OnInsert`, `@OnUpdate`, `@OnDelete`, `@OnReplace`):
 
 ```java
-@ChangeStream(collection = "orders")
-public class OrderStreamHandler {
-    // handler methods
+@ChangeStream(collection = "orders", documentType = Order.class)
+public class OrderHandler {
+
+    @OnChange
+    void handleOrderChange(ChangeStreamContext<Order> ctx) {
+        System.out.println(ctx.summary());
+    }
 }
 ```
+
+<Note>
+  `@ChangeStream` is meta-annotated with `@Component` — there is no need to add `@Component` or `@Service` separately. The class is automatically registered as a Spring bean.
+</Note>
+
+## Attributes Reference
+
+### Identification
+
+| Attribute | Type     | Default                        | Description                                              |
+|-----------|----------|--------------------------------|----------------------------------------------------------|
+| `value`   | `String` | `""`                           | Alias for `name`.                                        |
+| `name`    | `String` | `""` (kebab-case of class name) | Unique stream name. Used in logs, checkpoints, and metrics. |
+
+### MongoDB Target
+
+| Attribute      | Type       | Default          | Description                                                                                     |
+|----------------|------------|------------------|-------------------------------------------------------------------------------------------------|
+| `collection`   | `String`   | `""`             | Collection to watch. Required unless `documentType` has a `@Document` annotation or `watchDatabase`/`watchDeployment` is `true`. |
+| `database`     | `String`   | `""`             | Target database. Defaults to the Spring-configured database.                                    |
+| `documentType` | `Class<?>` | `Document.class` | Java type for deserialization. Also used to infer `collection` via `@Document` if not specified. |
+
+### Behaviour
+
+| Attribute          | Type      | Default | Description                                           |
+|--------------------|-----------|---------|-------------------------------------------------------|
+| `enabled`          | `boolean` | `true`  | Enable or disable this stream.                        |
+| `autoStart`        | `boolean` | `true`  | Automatically start the stream on application ready.  |
+| `mongoTemplateRef` | `String`  | `""`    | Name of the `MongoTemplate` or `ReactiveMongoTemplate` bean to use. Validated at startup. |
+
+### Scope
+
+| Attribute         | Type      | Default | Description                                                                                    |
+|-------------------|-----------|---------|------------------------------------------------------------------------------------------------|
+| `watchDatabase`   | `boolean` | `false` | Watch the entire database instead of a single collection. Makes `collection` optional.         |
+| `watchDeployment` | `boolean` | `false` | Watch the entire cluster (all databases). Makes `collection` optional.                         |
+
+## Collection Resolution
+
+If `collection` is not explicitly set, FlowWarden resolves it from `documentType`:
+
+1. If `documentType` has a Spring Data `@Document(collection = "...")` annotation, that value is used.
+2. Otherwise, the decapitalized simple class name is used (e.g. `Order` → `order`).
+3. If neither works and `watchDatabase`/`watchDeployment` is `false`, startup fails with an error.
+
+```java
+// Explicit collection
+@ChangeStream(collection = "orders")
+public class OrderHandler { ... }
+
+// Inferred from @Document annotation on Order class
+@ChangeStream(documentType = Order.class)
+public class OrderHandler { ... }
+```
+
+## Name Resolution
+
+The stream name is resolved in this order:
+
+1. `name()` attribute if non-empty
+2. `value()` attribute if non-empty
+3. Kebab-case of the class simple name (e.g. `OrderStreamHandler` → `order-stream-handler`)
+
+<Warning>
+  The stream name must be unique across all `@ChangeStream` classes in the application.
+</Warning>
+
+<Tip>
+  Always set a meaningful `name` — it appears in logs, metrics, and checkpoint keys. If omitted, FlowWarden generates one from the class name, which may break checkpoints if you rename the class.
+</Tip>
+
+## Handler Methods
+
+A `@ChangeStream` class must declare at least one handler method. FlowWarden supports two styles:
+
+### Generic: `@OnChange`
+
+Catches all operation types (or a subset via its `operationTypes` filter). Only one `@OnChange` method is allowed per class.
+
+```java
+@ChangeStream(documentType = Order.class)
+public class OrderHandler {
+
+    @OnChange
+    void handle(ChangeStreamContext<Order> ctx) {
+        System.out.println(ctx.getOperationType() + " on " + ctx.getCollectionName());
+    }
+}
+```
+
+### Typed: `@OnInsert`, `@OnUpdate`, `@OnDelete`, `@OnReplace`
+
+Route events to specific methods by operation type. At most one method per typed annotation.
+
+```java
+@ChangeStream(name = "typed-order-capture", documentType = Order.class)
+public class TypedOrderHandler {
+
+    @OnInsert
+    void onInsert(Order doc, ChangeStreamContext<Order> ctx) {
+        log.info("New order: {}", doc.getId());
+    }
+
+    @OnUpdate
+    void onUpdate(ChangeStreamContext<Order> ctx) {
+        log.info("Order updated: {}", ctx.getDocumentKey());
+    }
+
+    @OnDelete
+    void onDelete(ChangeStreamContext<Order> ctx) {
+        log.info("Order deleted: {}", ctx.getDocumentKey());
+    }
+}
+```
+
+### Combining Both
+
+When both typed handlers and `@OnChange` are present, typed handlers take priority. `@OnChange` acts as a **fallback** for operation types without a dedicated handler.
+
+```java
+@ChangeStream(name = "typed-order-capture", documentType = Order.class)
+public class OrderHandler {
+
+    @OnInsert
+    void onInsert(Order doc, ChangeStreamContext<Order> ctx) { ... }
+
+    @OnUpdate
+    void onUpdate(ChangeStreamContext<Order> ctx) { ... }
+
+    @OnDelete
+    void onDelete(ChangeStreamContext<Order> ctx) { ... }
+
+    @OnChange
+    void onFallback(ChangeStreamContext<Order> ctx) {
+        // Catches REPLACE and any other unhandled operation
+    }
+}
+```
+
+### Supported Signatures
+
+Typed handler methods (`@OnInsert`, `@OnUpdate`, `@OnDelete`, `@OnReplace`) support three signature styles:
+
+| Signature                                 | Style                  | Description                           |
+|-------------------------------------------|------------------------|---------------------------------------|
+| `void handle(ChangeStreamContext<T> ctx)`  | `CONTEXT_ONLY`         | Access context; get the document from `ctx`. |
+| `void handle(T doc)`                       | `DOCUMENT_ONLY`        | Receive the deserialized document directly. |
+| `void handle(T doc, ChangeStreamContext<T> ctx)` | `DOCUMENT_AND_CONTEXT` | Both the document and the context.    |
+
+`@OnChange` only supports the `CONTEXT_ONLY` style: `void handle(ChangeStreamContext ctx)`.
+
+<Warning>
+  If you use `DOCUMENT_ONLY` or `DOCUMENT_AND_CONTEXT` signatures, you **must** set a concrete `documentType` on `@ChangeStream` (not `Document.class`). Otherwise, startup fails with a validation error.
+</Warning>
+
+## Examples
+
+### Minimal
+
+<CodeGroup>
+```java Imperative (MVC)
+@ChangeStream(documentType = Order.class)
+public class OrderStream {
+
+    @OnChange
+    void handleOrderChange(ChangeStreamContext<Order> ctx) {
+        System.out.println(ctx.summary());
+    }
+}
+```
+
+```java Reactive (WebFlux)
+@ChangeStream(documentType = Order.class)
+public class OrderStream {
+
+    @OnChange
+    void handleOrderChange(ChangeStreamContext<Order> ctx) {
+        System.out.println(ctx.summary());
+    }
+}
+```
+</CodeGroup>
+
+<Note>
+  The handler class code is identical in both modes. The execution mode is determined globally by the `flowwarden.default-mode` property (`IMPERATIVE` or `REACTIVE`), which selects the appropriate stream manager at auto-configuration time.
+</Note>
+
+### With Explicit Name and Collection
+
+```java
+@ChangeStream(name = "order-watcher", collection = "orders")
+public class OrderHandler {
+
+    @OnChange
+    void handle(ChangeStreamContext<?> ctx) {
+        System.out.printf("Event %s on %s%n",
+            ctx.getOperationType(), ctx.getCollectionName());
+    }
+}
+```
+
+### Disabled Stream
+
+```java
+@ChangeStream(
+    collection = "orders",
+    enabled    = false   // Will not start automatically
+)
+public class OrderHandler { ... }
+```
+
+### Custom MongoTemplate
+
+When your application uses multiple MongoDB connections, specify which template to use:
+
+```java
+@ChangeStream(
+    collection       = "audit_events",
+    mongoTemplateRef = "auditMongoTemplate"
+)
+public class AuditStreamHandler {
+
+    @OnChange
+    void handle(ChangeStreamContext<?> ctx) {
+        // Uses the "auditMongoTemplate" bean
+    }
+}
+```
+
+## Programmatic Start/Stop
+
+Streams can be controlled at runtime via the `FlowWardenStreamManager` interface:
+
+```java
+@Autowired
+FlowWardenStreamManager streamManager;
+
+// Stop a running stream
+streamManager.stopStream("order-watcher");
+
+// Restart it later
+streamManager.startStream("order-watcher");
+
+// Check status
+boolean running = streamManager.isRunning("order-watcher");
+```
+
+## Best Practices
+
+- **One handler class per collection** — keep stream handlers focused and cohesive.
+- **Set `documentType`** when you need typed access — otherwise documents arrive as `org.bson.Document`.
+- **Use `enabled = false`** to temporarily disable a stream without removing the code.
+- **Set `autoStart = false`** if you need to start the stream programmatically after some initialization logic.
+
+<Warning>
+  MongoDB **must** be configured as a [Replica Set](https://www.mongodb.com/docs/manual/replication/) for Change Streams to work. This applies to production **and** development environments. Testcontainers automatically provisions a single-node Replica Set for tests.
+</Warning>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Event Handlers" icon="bolt" href="/reference/event-handlers">
+    `@OnInsert`, `@OnUpdate`, `@OnDelete`, `@OnChange` — handler method signatures in detail.
+  </Card>
+  <Card title="@Filter" icon="filter" href="/reference/filter">
+    Push server-side predicates to MongoDB's aggregation pipeline.
+  </Card>
+  <Card title="@Checkpoint" icon="floppy-disk" href="/reference/checkpoint">
+    Configure resume token persistence for crash-resilient streams.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/reference/configuration">
+    `flowwarden.default-mode` and other application properties.
+  </Card>
+</CardGroup>
