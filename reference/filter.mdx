@@ -4,53 +4,268 @@ description: "Application-side Java filtering for Change Stream events"
 icon: "filter"
 ---
 
-<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
-
 ## Overview
 
-`@Filter` performs **application-side filtering** — all events arrive from MongoDB, and a Java predicate decides which ones are forwarded to the handler.
+`@Filter` performs **application-side filtering** in Java. All events arrive from MongoDB, and a
+predicate decides which ones are forwarded to handler methods. Events that don't pass the filter
+are silently skipped — but their resume token is still checkpointed as `lastSeenToken`.
 
-Executed **on every event** received by FlowWarden.
+Unlike [`@Pipeline`](/reference/pipeline) which runs a MongoDB aggregation pipeline **once** at
+stream startup to reduce network traffic, `@Filter` executes **on every event** and can leverage
+Spring beans, service calls, and any Java logic.
 
-## Usage
+<Note>
+  At most **one** `@Filter` method is allowed per `@ChangeStream` class.
+</Note>
+
+## Supported Signatures
+
+<CodeGroup>
+
+```java Predicate style
+@Filter
+Predicate<ChangeStreamContext<?>> myFilter() {
+    return ctx -> "PAID".equals(
+        ctx.getFullDocument(Order.class).getStatus()
+    );
+}
+```
+
+```java Boolean method style
+@Filter
+boolean filter(ChangeStreamContext<?> ctx) {
+    return "PAID".equals(
+        ctx.getFullDocument(Order.class).getStatus()
+    );
+}
+```
+
+</CodeGroup>
+
+| Return type | Parameters | Description |
+|-------------|------------|-------------|
+| `Predicate<ChangeStreamContext<?>>` | None | Returns a reusable predicate. Called once, predicate tested per event. |
+| `boolean` | `ChangeStreamContext<?>` | Direct evaluation. Called on every event. |
+
+## Basic Example
 
 ```java
-@ChangeStream(collection = "orders")
+@ChangeStream(collection = "orders", documentType = Order.class)
 public class PaidOrderHandler {
 
     @Filter
-    public boolean filter(ChangeStreamContext<?> ctx) {
-        return "PAID".equals(ctx.getBody().get("status"));
+    boolean onlyPaid(ChangeStreamContext<?> ctx) {
+        Order order = ctx.getFullDocument(Order.class);
+        return order != null && "PAID".equals(order.getStatus());
     }
 
     @OnInsert
-    public void handle(ChangeStreamContext<Order> ctx) {
-        // only receives events where status == PAID
+    void handle(Order order, ChangeStreamContext<Order> ctx) {
+        // Only receives events where status == PAID
+        log.info("Paid order: {}", order.getId());
     }
 }
 ```
 
-## Supported signatures
+## Startup Validation (Fail-Fast)
 
-| Return type | Parameter | Description |
-|-------------|-----------|-------------|
-| `boolean` | `ChangeStreamContext<?>` | Return `true` to forward, `false` to skip |
-| `Predicate<ChangeStreamContext<?>>` | — | Functional alternative |
+FlowWarden validates `@Filter` compatibility **at application startup** and rejects invalid
+configurations immediately with a clear error message. The application will **fail to start**
+if `@Filter` is combined with handlers that cover operations where MongoDB does not provide
+a `fullDocument`.
 
-## Checkpoint interaction
+### Why?
 
-Events rejected by `@Filter` are **not** forwarded to the handler, but their resume token is still checkpointed as `lastSeenToken` to avoid reprocessing after restart.
+`@Filter` predicates typically call `ctx.getFullDocument()`, which returns `null` for
+`DELETE`, `DROP`, and `INVALIDATE` operations. Running the filter on these events would be
+error-prone at runtime — so FlowWarden rejects the combination at startup instead.
+
+### Rules
+
+The following combinations are **rejected**:
+
+<Warning>
+  These configurations cause a `BeanCreationException` at startup — the application will not start.
+</Warning>
+
+**1. `@Filter` + typed handler for a no-fullDocument operation**
+
+```java
+// REJECTED: @OnDelete handles DELETE which has no fullDocument
+@ChangeStream(collection = "orders")
+public class InvalidHandler {
+
+    @OnDelete
+    void onDelete(ChangeStreamContext<?> ctx) { }
+
+    @Filter
+    boolean filter(ChangeStreamContext<?> ctx) { return true; }
+}
+```
+
+The error message:
+
+```
+@ChangeStream class InvalidHandler declares @Filter and @OnDelete, which is not allowed.
+DELETE events have no fullDocument, so the @Filter predicate cannot safely access the document.
+Use a server-side @Pipeline to filter these events, or move the filtering logic into the
+handler method.
+```
+
+**2. `@Filter` + `@OnChange` without `operationTypes` restriction**
+
+```java
+// REJECTED: @OnChange covers ALL operations including DELETE/DROP/INVALIDATE
+@ChangeStream(collection = "orders")
+public class InvalidHandler2 {
+
+    @OnChange
+    void handle(ChangeStreamContext<?> ctx) { }
+
+    @Filter
+    boolean filter(ChangeStreamContext<?> ctx) { return true; }
+}
+```
+
+**3. `@Filter` + `@OnChange` with `operationTypes` that includes DELETE, DROP, or INVALIDATE**
+
+```java
+// REJECTED: operationTypes includes DELETE
+@ChangeStream(collection = "orders")
+public class InvalidHandler3 {
+
+    @OnChange(operationTypes = {OperationType.INSERT, OperationType.DELETE})
+    void handle(ChangeStreamContext<?> ctx) { }
+
+    @Filter
+    boolean filter(ChangeStreamContext<?> ctx) { return true; }
+}
+```
+
+### Valid Combinations
+
+The following combinations are **accepted**:
+
+```java
+// OK: @Filter + typed handlers for operations WITH fullDocument
+@ChangeStream(collection = "orders")
+public class ValidHandler {
+
+    @OnInsert
+    void onInsert(ChangeStreamContext<?> ctx) { }
+
+    @OnUpdate
+    void onUpdate(ChangeStreamContext<?> ctx) { }
+
+    @Filter
+    boolean filter(ChangeStreamContext<?> ctx) { return true; }
+}
+```
+
+```java
+// OK: @Filter + @OnChange restricted to fullDocument operations
+@ChangeStream(collection = "orders")
+public class ValidHandler2 {
+
+    @OnChange(operationTypes = {OperationType.INSERT, OperationType.UPDATE, OperationType.REPLACE})
+    void handle(ChangeStreamContext<?> ctx) { }
+
+    @Filter
+    boolean filter(ChangeStreamContext<?> ctx) { return true; }
+}
+```
+
+### Quick Reference
+
+| Handler combination | `@Filter` allowed? |
+|--------------------|--------------------|
+| `@OnInsert` | Yes |
+| `@OnUpdate` | Yes |
+| `@OnReplace` | Yes |
+| `@OnInsert` + `@OnUpdate` | Yes |
+| `@OnDelete` | **No** |
+| `@OnChange` (no restriction) | **No** |
+| `@OnChange(operationTypes = {INSERT, UPDATE})` | Yes |
+| `@OnChange(operationTypes = {INSERT, DELETE})` | **No** |
+| `@OnInsert` + `@OnDelete` | **No** |
+
+<Tip>
+  If you need to handle both `DELETE` and other operations while filtering, use
+  [`@Pipeline`](/reference/pipeline) for server-side filtering instead, or move the filter
+  logic directly into your handler method.
+</Tip>
+
+## Checkpoint Interaction
+
+Events rejected by `@Filter` are **not** forwarded to the handler, but their resume token is
+still checkpointed as `lastSeenToken`. This prevents reprocessing filtered events after a restart.
+
+When `@Filter` is used alone (without `@Pipeline`), there is no gap between `lastSeenToken` and
+`lastProcessedToken` — the checkpoint behavior is neutral.
 
 ## Combining with @Pipeline
 
-`@Filter` can coexist with [`@Pipeline`](/reference/pipeline) on the same `@ChangeStream`, forming a **double funnel**:
+`@Filter` can coexist with [`@Pipeline`](/reference/pipeline) on the same `@ChangeStream`,
+forming a **double filtering funnel**:
 
 ```
-Oplog
+Oplog (all writes)
   └─► Change Stream on collection
-        └─► @Pipeline (server-side)        ← reduces network traffic
+        └─► @Pipeline (server-side)         ← reduces network traffic
               └─► @Filter (application-side) ← complex Java logic
                     └─► Handler
 ```
 
-See [ARCH-030](/reference/pipeline) for details.
+**Typical use case:** pre-filter `operationType = insert | update` and `status = PAID`
+server-side with `@Pipeline`, then verify application-side with `@Filter` that the tenant
+is active via a Spring service call.
+
+```java
+@ChangeStream(collection = "orders", documentType = Order.class)
+public class PaidOrderHandler {
+
+    @Pipeline
+    List<Bson> pipeline() {
+        return List.of(
+            Aggregates.match(Filters.and(
+                Filters.in("operationType", "insert", "update"),
+                Filters.eq("fullDocument.status", "PAID")
+            ))
+        );
+    }
+
+    @Filter
+    boolean filter(ChangeStreamContext<?> ctx) {
+        // @Pipeline already filtered server-side; refine with Java logic
+        return tenantService.isActive(ctx.getFullDocument(Order.class).getTenantId());
+    }
+
+    @OnInsert
+    void onNewPaidOrder(Order order, ChangeStreamContext<Order> ctx) {
+        // Only receives PAID orders from active tenants
+    }
+}
+```
+
+<Note>
+  When combining `@Pipeline` + `@Filter`, setting `dualCheckpoint = true` on
+  [`@Checkpoint`](/reference/checkpoint) is recommended to keep `lastSeenToken` advancing
+  independently.
+</Note>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="@Pipeline" icon="server" href="/reference/pipeline">
+    Server-side aggregation pipeline filtering
+  </Card>
+  <Card title="Filtering Events Guide" icon="book" href="/guides/filtering-events">
+    Complete guide combining @Pipeline and @Filter
+  </Card>
+  <Card title="@Checkpoint" icon="floppy-disk" href="/reference/checkpoint">
+    Resume token persistence and dual checkpoint
+  </Card>
+  <Card title="Event Handlers" icon="bolt" href="/reference/event-handlers">
+    @OnInsert, @OnUpdate, @OnDelete, @OnChange
+  </Card>
+</CardGroup>
