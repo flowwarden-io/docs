@@ -1,0 +1,55 @@
+---
+title: "@Pipeline"
+description: "Server-side MongoDB aggregation pipeline for Change Streams"
+icon: "diagram-project"
+---
+
+<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+
+## Overview
+
+`@Pipeline` defines a **server-side aggregation pipeline** sent to MongoDB when the Change Stream starts. Only matching events transit over the network, reducing traffic and application load.
+
+Executed **once** at stream startup.
+
+## Usage
+
+```java
+@ChangeStream(collection = "orders")
+public class PaidOrderHandler {
+
+    @Pipeline
+    public List<Bson> pipeline() {
+        return List.of(
+            Aggregates.match(Filters.eq("fullDocument.status", "PAID"))
+        );
+    }
+
+    @OnInsert
+    public void handle(ChangeStreamContext<Order> ctx) {
+        // only receives inserts where status == PAID
+    }
+}
+```
+
+## Supported signatures
+
+| Return type | Description |
+|-------------|-------------|
+| `List<Bson>` | Raw MongoDB BSON pipeline stages |
+| `List<AggregationOperation>` | Spring Data aggregation operations |
+| `Aggregation` | Spring Data `Aggregation` object |
+
+## Combining with @Filter
+
+`@Pipeline` can coexist with [`@Filter`](/reference/filter) on the same `@ChangeStream`, forming a **double funnel** — pre-filter server-side, then refine with Java logic:
+
+```
+Oplog
+  └─► Change Stream on collection
+        └─► @Pipeline (server-side)        ← reduces network traffic
+              └─► @Filter (application-side) ← complex Java logic
+                    └─► Handler
+```
+
+**Typical use case:** pre-filter `operationType = insert | update` and `status = PAID` on MongoDB, then check in Java that the tenant is active via a Spring service call.

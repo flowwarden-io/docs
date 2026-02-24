@@ -61,6 +61,7 @@
               "reference/enable-flowwarden",
               "reference/change-stream",
               "reference/event-handlers",
+              "reference/pipeline",
               "reference/filter",
               "reference/checkpoint",
               "reference/retry-policy",

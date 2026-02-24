@@ -1,17 +1,56 @@
 ---
 title: "@Filter"
-description: "Filter Change Stream events with MongoDB pipelines"
+description: "Application-side Java filtering for Change Stream events"
 icon: "filter"
 ---
 
 <Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
 
+## Overview
+
+`@Filter` performs **application-side filtering** — all events arrive from MongoDB, and a Java predicate decides which ones are forwarded to the handler.
+
+Executed **on every event** received by FlowWarden.
+
 ## Usage
 
 ```java
 @ChangeStream(collection = "orders")
-@Filter(pipeline = "{ $match: { 'fullDocument.status': 'PAID' } }", mode = FilterMode.SERVER)
 public class PaidOrderHandler {
-    // ...
+
+    @Filter
+    public boolean filter(ChangeStreamContext<?> ctx) {
+        return "PAID".equals(ctx.getBody().get("status"));
+    }
+
+    @OnInsert
+    public void handle(ChangeStreamContext<Order> ctx) {
+        // only receives events where status == PAID
+    }
 }
 ```
+
+## Supported signatures
+
+| Return type | Parameter | Description |
+|-------------|-----------|-------------|
+| `boolean` | `ChangeStreamContext<?>` | Return `true` to forward, `false` to skip |
+| `Predicate<ChangeStreamContext<?>>` | — | Functional alternative |
+
+## Checkpoint interaction
+
+Events rejected by `@Filter` are **not** forwarded to the handler, but their resume token is still checkpointed as `lastSeenToken` to avoid reprocessing after restart.
+
+## Combining with @Pipeline
+
+`@Filter` can coexist with [`@Pipeline`](/reference/pipeline) on the same `@ChangeStream`, forming a **double funnel**:
+
+```
+Oplog
+  └─► Change Stream on collection
+        └─► @Pipeline (server-side)        ← reduces network traffic
+              └─► @Filter (application-side) ← complex Java logic
+                    └─► Handler
+```
+
+See [ARCH-030](/reference/pipeline) for details.
