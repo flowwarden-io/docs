@@ -1,46 +1,203 @@
 ---
 title: "Quickstart"
-description: "Get started with FlowWarden Stream in 5 minutes"
+description: "Start listening to MongoDB Change Streams in a Spring Boot app in under 5 minutes"
 icon: "rocket"
 ---
 
-<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+## Prerequisites
 
-## 1. Add the dependency
+<CardGroup cols={3}>
+  <Card title="Java 17+" icon="java">
+    Spring Boot 3.x requires Java 17 as a minimum.
+  </Card>
+  <Card title="Spring Boot 3.x" icon="leaf">
+    Spring MVC or Spring WebFlux — both are supported.
+  </Card>
+  <Card title="MongoDB Replica Set" icon="database">
+    Change Streams require a Replica Set. A single-node RS is fine for local dev.
+  </Card>
+</CardGroup>
 
-```xml
+<Warning>
+MongoDB must be running as a **Replica Set** — Change Streams are not available on standalone instances. For local development, start MongoDB with `--replSet rs0` or use a Docker Compose setup.
+</Warning>
+
+---
+
+## Step 1 — Add the dependency
+
+<CodeGroup>
+
+```xml Maven
 <dependency>
-  <groupId>io.flowwarden</groupId>
-  <artifactId>flowwarden-stream-core</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+    <groupId>io.flowwarden</groupId>
+    <artifactId>flowwarden-stream-core</artifactId>
+    <version>1.0.0</version>
 </dependency>
 ```
 
-## 2. Configure your mode
-
-```yaml
-flowwarden:
-  default-mode: IMPERATIVE  # or REACTIVE
+```groovy Gradle
+implementation 'io.flowwarden:flowwarden-stream-core:1.0.0'
 ```
 
-## 3. Enable FlowWarden
+</CodeGroup>
+
+No additional dependencies needed. FlowWarden uses only Spring Data MongoDB, which is already on your classpath via `spring-boot-starter-data-mongodb`.
+
+---
+
+## Step 2 — Configure your application
+
+Add the following to your `application.yml`:
+
+<Tabs>
+  <Tab title="Spring MVC (imperative)">
+    ```yaml
+    flowwarden:
+      default-mode: IMPERATIVE
+
+    spring:
+      data:
+        mongodb:
+          uri: mongodb://localhost:27017/mydb?replicaSet=rs0
+    ```
+  </Tab>
+  <Tab title="Spring WebFlux (reactive)">
+    ```yaml
+    flowwarden:
+      default-mode: REACTIVE
+
+    spring:
+      data:
+        mongodb:
+          uri: mongodb://localhost:27017/mydb?replicaSet=rs0
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+`flowwarden.default-mode` is optional — it defaults to `IMPERATIVE` when omitted. Only set it explicitly if you need the reactive mode.
+</Note>
+
+---
+
+## Step 3 — Enable FlowWarden
+
+Add `@EnableFlowWarden` to your main application class:
 
 ```java
+import io.flowwarden.stream.annotation.EnableFlowWarden;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
 @SpringBootApplication
 @EnableFlowWarden
-public class MyApplication { }
-```
-
-## 4. Create a handler
-
-```java
-@ChangeStream(collection = "orders")
-public class OrderStreamHandler {
-
-    @OnInsert
-    public void onNewOrder(ChangeStreamContext<Order> ctx) {
-        Order order = ctx.getBody();
-        // process new order
+public class MyApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(MyApplication.class, args);
     }
 }
 ```
+
+This activates the FlowWarden bean scanner and registers all `@ChangeStream` classes found during Spring component scanning.
+
+---
+
+## Step 4 — Create your first handler
+
+Declare a Spring bean annotated with `@ChangeStream` and add a handler method:
+
+<CodeGroup>
+
+```java Imperative (Spring MVC)
+import io.flowwarden.stream.ChangeStreamContext;
+import io.flowwarden.stream.annotation.ChangeStream;
+import io.flowwarden.stream.annotation.OnChange;
+import org.springframework.stereotype.Component;
+
+@Component
+@ChangeStream(documentType = Order.class)
+public class OrderStream {
+
+    @OnChange
+    void handleOrderChange(ChangeStreamContext<Order> ctx) {
+        System.out.println(ctx.summary());
+    }
+}
+```
+
+```java Reactive (Spring WebFlux)
+import io.flowwarden.stream.ChangeStreamContext;
+import io.flowwarden.stream.annotation.ChangeStream;
+import io.flowwarden.stream.annotation.OnChange;
+import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+
+@Component
+@ChangeStream(documentType = Order.class)
+public class OrderStream {
+
+    @OnChange
+    Mono<Void> handleOrderChange(ChangeStreamContext<Order> ctx) {
+        return Mono.fromRunnable(() -> System.out.println(ctx.summary()));
+    }
+}
+```
+
+</CodeGroup>
+
+Where `Order` is a Spring Data `@Document` class:
+
+```java
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+@Document(collection = "orders")
+public class Order {
+
+    @Id
+    private String id;
+    private String customerEmail;
+    private String status;
+    // getters, setters...
+}
+```
+
+<Tip>
+When `documentType` is set, FlowWarden infers the collection name from the `@Document` annotation (or the decapitalized class name if none). No need to repeat it in `@ChangeStream(collection = "orders")`.
+</Tip>
+
+---
+
+## Step 5 — Run it
+
+Start your application. On boot, you will see a log line for each discovered stream:
+
+```
+INFO  i.f.s.i.d.ChangeStreamBeanPostProcessor - Discovered Change Stream 'order-stream' on collection 'orders' (handlers: @OnChange=handleOrderChange, checkpoint: false)
+```
+
+Then insert a document in the `orders` collection — your handler fires immediately.
+
+```js MongoDB shell
+db.orders.insertOne({ customerEmail: "alice@example.com", status: "PENDING", total: 49.99 })
+```
+
+---
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card title="How it Works" icon="gears" href="/concepts/how-it-works">
+    Understand the startup lifecycle and the event processing pipeline
+  </Card>
+  <Card title="Typed handlers" icon="code" href="/reference/event-handlers">
+    Use @OnInsert, @OnUpdate, @OnDelete for operation-specific logic
+  </Card>
+  <Card title="Checkpoint & Resume" icon="bookmark" href="/guides/checkpoint-resume">
+    Survive restarts without missing or replaying events
+  </Card>
+  <Card title="Filtering Events" icon="filter" href="/guides/filtering-events">
+    Push aggregation pipelines to MongoDB or filter in Java
+  </Card>
+</CardGroup>
