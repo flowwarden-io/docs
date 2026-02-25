@@ -11,11 +11,11 @@ FlowWarden wraps MongoDB Change Streams into a declarative, annotation-driven pr
 ```mermaid
 flowchart TD
     A["@EnableFlowWarden"] --> B["FlowWardenAutoConfiguration"]
-    B --> C["ChangeStreamBeanPostProcessor\n(BeanPostProcessor)"]
-    C -->|"scans beans at startup"| D["@ChangeStream beans\n(handlers, pipeline, filter,\ncheckpoint, retry, dlq)"]
-    D --> E["StreamRegistry\n(ChangeStreamDefinition[])"]
-    E -->|"ApplicationReadyEvent"| F["StreamManager\n(Imperative or Reactive)"]
-    F -->|"subscribe"| G[("MongoDB\nChange Stream")]
+    B --> C["ChangeStreamBeanPostProcessor<br/>(BeanPostProcessor)"]
+    C -->|"scans beans at startup"| D["@ChangeStream beans<br/>(handlers, pipeline, filter,<br/>checkpoint, retry, dlq)"]
+    D --> E["StreamRegistry<br/>(ChangeStreamDefinition[])"]
+    E -->|"ApplicationReadyEvent"| F["StreamManager<br/>(Imperative or Reactive)"]
+    F -->|"subscribe"| G[("MongoDB<br/>Change Stream")]
 ```
 
 ---
@@ -79,18 +79,18 @@ Every Change Stream event flows through the following stages before reaching you
 
 ```mermaid
 flowchart TD
-    A[("MongoDB Oplog")] -->|"implicit collection filter"| B["@Pipeline\nserver-side aggregation\nevaluated once at stream start"]
+    A[("MongoDB Oplog")] -->|"implicit collection filter"| B["@Pipeline<br/>server-side aggregation<br/>evaluated once at stream start"]
     B -->|"only matching events sent over the wire"| C["FlowWarden receives event"]
-    C --> D{"@Filter\napplication-side predicate\nper event"}
+    C --> D{"@Filter<br/>application-side predicate<br/>per event"}
     D -->|"false → event discarded"| X(["dropped"])
-    D -->|"true → continue"| E{"Route by\noperation type"}
+    D -->|"true → continue"| E{"Route by<br/>operation type"}
     E -->|"INSERT"| F1["@OnInsert"]
     E -->|"UPDATE"| F2["@OnUpdate"]
     E -->|"DELETE"| F3["@OnDelete"]
     E -->|"REPLACE"| F4["@OnReplace"]
     E -->|"other / fallback"| F5["@OnChange"]
     F1 & F2 & F3 & F4 & F5 --> G["Handler invoked"]
-    G --> H[("_fw_checkpoints\nresume token saved")]
+    G --> H[("_fw_checkpoints<br/>resume token saved")]
 ```
 
 ### @Pipeline vs @Filter
@@ -124,8 +124,8 @@ flowchart TD
 
     ```mermaid
     flowchart LR
-        A[("Full oplog")] -->|"server-side"| B["@Pipeline\nMongoDB aggregation"]
-        B -->|"app-side"| C["@Filter\nJava predicate"]
+        A[("Full oplog")] -->|"server-side"| B["@Pipeline<br/>MongoDB aggregation"]
+        B -->|"app-side"| C["@Filter<br/>Java predicate"]
         C --> D["Handler"]
     ```
   </Tab>
