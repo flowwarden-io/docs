@@ -4,12 +4,161 @@ description: "Activate FlowWarden auto-configuration and component scanning"
 icon: "power-off"
 ---
 
-<Note>This page is a placeholder. Full content will be generated from the implemented code using `/generate-doc`.</Note>
+## Overview
 
-## Usage
+`@EnableFlowWarden` activates the FlowWarden framework. Place it on a `@Configuration` or
+`@SpringBootApplication` class.
+
+It is a **marker annotation** — it does not perform package scanning itself. `@ChangeStream`
+classes are discovered through Spring's standard `@ComponentScan` (since `@ChangeStream` is
+meta-annotated with `@Component`), and `ChangeStreamBeanPostProcessor` inspects all beans in
+the context to find those annotated with `@ChangeStream`.
+
+At startup, FlowWarden will:
+
+1. Discover all `@ChangeStream` beans from the Spring application context
+2. Validate the configuration — execution mode, MongoDB template availability, handler signatures
+3. Register discovered streams in the internal registry
+4. Start streams with `autoStart = true` after the Spring context is ready
+
+## Minimal Setup
 
 ```java
 @SpringBootApplication
 @EnableFlowWarden
+public class MyApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(MyApplication.class, args);
+    }
+}
+```
+
+Your `@ChangeStream` classes just need to be picked up by Spring's `@ComponentScan` — which
+happens automatically when they are in the same package (or a sub-package) as your
+`@SpringBootApplication` class.
+
+## Attributes
+
+| Attribute | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `propertyPrefix` | `String` | `"flowwarden.stream"` | Prefix for FlowWarden configuration properties |
+| `enabled` | `boolean` | `true` | Globally enable or disable all streams |
+
+<Note>
+  `@EnableFlowWarden` does **not** have `basePackages` or `basePackageClasses` attributes.
+  Handler discovery relies on Spring's standard `@ComponentScan`. If you need to restrict which
+  `@ChangeStream` classes are loaded (e.g., in tests), use Spring's own
+  `@ComponentScan(basePackages = ...)` or `@SpringBootTest(classes = ...)`.
+</Note>
+
+## Configuration
+
+The execution mode defaults to `IMPERATIVE` when not explicitly configured. For Spring WebFlux
+applications, set it to `REACTIVE` in `application.yml`:
+
+```yaml
+flowwarden:
+  default-mode: REACTIVE   # defaults to IMPERATIVE if omitted
+```
+
+<Info>
+  If `flowwarden.default-mode` is not set, FlowWarden defaults to `IMPERATIVE` and logs:
+
+  ```
+  INFO  FlowWardenConfigurationValidator - No 'flowwarden.default-mode' configured, defaulting to IMPERATIVE
+  ```
+
+  Spring MVC applications can omit this property entirely. Spring WebFlux applications must
+  set it to `REACTIVE` explicitly.
+</Info>
+
+## How Auto-Configuration Works
+
+FlowWarden uses Spring Boot's auto-configuration mechanism. When `@EnableFlowWarden` is
+present, three auto-configuration classes activate in order:
+
+| Class | Condition | Provides |
+|-------|-----------|----------|
+| `FlowWardenAutoConfiguration` | Always | `ChangeStreamBeanPostProcessor`, `FlowWardenConfigurationValidator`, `CheckpointStore` |
+| `ImperativeFlowWardenAutoConfiguration` | `flowwarden.default-mode=IMPERATIVE` (or missing) | `ImperativeStreamManager` |
+| `ReactiveFlowWardenAutoConfiguration` | `flowwarden.default-mode=REACTIVE` | `ReactiveStreamManager` |
+
+<Accordion title="Startup validation details">
+
+The `FlowWardenConfigurationValidator` runs after all singleton beans are created
+(`SmartInitializingSingleton`) and checks:
+
+1. **Mode is resolved** — `flowwarden.default-mode` defaults to `IMPERATIVE` if not set
+2. **Template available** — `IMPERATIVE` requires `MongoTemplate`, `REACTIVE` requires `ReactiveMongoTemplate`
+3. **Handler return types** — `void` handlers in `REACTIVE` mode and `Mono<Void>` handlers in `IMPERATIVE` mode are rejected
+
+All errors follow the Spring Boot error format with a `Description` and an `Action` section
+suggesting how to fix the issue.
+
+</Accordion>
+
+## Disabling FlowWarden
+
+Set `enabled = false` to disable all stream processing without removing the annotation:
+
+```java
+@SpringBootApplication
+@EnableFlowWarden(enabled = false)
 public class MyApplication { }
 ```
+
+This is useful for running the application in a degraded mode (e.g., maintenance) or for
+profiles where streams should not start.
+
+## Full Example
+
+<CodeGroup>
+
+```java Imperative (Spring MVC)
+@SpringBootApplication
+@EnableFlowWarden
+public class SampleSpringMvcApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(SampleSpringMvcApplication.class, args);
+    }
+}
+```
+
+```java Reactive (Spring WebFlux)
+@SpringBootApplication
+@EnableFlowWarden
+public class SampleSpringReactiveApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(SampleSpringReactiveApplication.class, args);
+    }
+}
+```
+
+</CodeGroup>
+
+```yaml application.yml
+flowwarden:
+  default-mode: IMPERATIVE   # or REACTIVE
+
+spring:
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/mydb   # Must be a Replica Set
+```
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Full getting-started guide with dependency setup
+  </Card>
+  <Card title="@ChangeStream" icon="bolt" href="/reference/change-stream">
+    Declare a Change Stream handler class
+  </Card>
+  <Card title="Imperative vs Reactive" icon="arrows-split-up-and-left" href="/guides/imperative-vs-reactive">
+    Choose the right execution mode
+  </Card>
+  <Card title="Configuration" icon="gear" href="/reference/configuration">
+    All FlowWarden configuration properties
+  </Card>
+</CardGroup>
