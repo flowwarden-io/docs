@@ -8,31 +8,14 @@ FlowWarden wraps MongoDB Change Streams into a declarative, annotation-driven pr
 
 ## The Big Picture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     SPRING BOOT APPLICATION                      │
-│                                                                  │
-│  @EnableFlowWarden                                               │
-│       │                                                          │
-│       ▼                                                          │
-│  FlowWardenAutoConfiguration                                     │
-│  ChangeStreamBeanPostProcessor ──► StreamRegistry                │
-│       │                                  │                       │
-│       ▼                                  ▼                       │
-│  @ChangeStream beans discovered     ChangeStreamDefinition[]     │
-│  (handlers, pipeline, filter,             │                      │
-│   checkpoint, retry, dlq config)          │                      │
-│                                           ▼                      │
-│                          ApplicationReadyEvent                   │
-│                                           │                      │
-│                          ┌────────────────┴──────────────────┐  │
-│                          │       StreamManager starts        │  │
-│                          │  (Imperative or Reactive)         │  │
-│                          └────────────────┬──────────────────┘  │
-└───────────────────────────────────────────┼─────────────────────┘
-                                            │
-                                            ▼
-                               MongoDB Change Stream
+```mermaid
+flowchart TD
+    A["@EnableFlowWarden"] --> B["FlowWardenAutoConfiguration"]
+    B --> C["ChangeStreamBeanPostProcessor\n(BeanPostProcessor)"]
+    C -->|"scans beans at startup"| D["@ChangeStream beans\n(handlers, pipeline, filter,\ncheckpoint, retry, dlq)"]
+    D --> E["StreamRegistry\n(ChangeStreamDefinition[])"]
+    E -->|"ApplicationReadyEvent"| F["StreamManager\n(Imperative or Reactive)"]
+    F -->|"subscribe"| G[("MongoDB\nChange Stream")]
 ```
 
 ---
@@ -94,31 +77,20 @@ If a checkpoint was previously saved in `_fw_checkpoints`, the resume token is l
 
 Every Change Stream event flows through the following stages before reaching your handler:
 
-```
-MongoDB Oplog
-    │
-    ▼  ── Implicit collection filter (only events for the watched collection)
-    │
-    ▼  ── @Pipeline  (server-side aggregation, evaluated once at stream start)
-    │      Reduces network traffic — only matching events are sent to the app
-    │
-    ▼  FlowWarden receives the event
-    │
-    ▼  ── @Filter  (application-side Java predicate, evaluated per event)
-    │      Allows complex filtering with Spring bean injection, service calls, etc.
-    │      ⚠ Skipped if the event has no fullDocument (DELETE, DROP, INVALIDATE)
-    │
-    ▼  ── Route by operation type
-    │      INSERT  → @OnInsert handler
-    │      UPDATE  → @OnUpdate handler
-    │      DELETE  → @OnDelete handler
-    │      REPLACE → @OnReplace handler
-    │      other   → @OnChange handler (if declared)
-    │
-    ▼  Handler invoked
-    │
-    ▼  ── Checkpoint saved to _fw_checkpoints
-           (every N events or every X seconds, per @Checkpoint config)
+```mermaid
+flowchart TD
+    A[("MongoDB Oplog")] -->|"implicit collection filter"| B["@Pipeline\nserver-side aggregation\nevaluated once at stream start"]
+    B -->|"only matching events sent over the wire"| C["FlowWarden receives event"]
+    C --> D{"@Filter\napplication-side predicate\nper event"}
+    D -->|"false → event discarded"| X(["dropped"])
+    D -->|"true → continue"| E{"Route by\noperation type"}
+    E -->|"INSERT"| F1["@OnInsert"]
+    E -->|"UPDATE"| F2["@OnUpdate"]
+    E -->|"DELETE"| F3["@OnDelete"]
+    E -->|"REPLACE"| F4["@OnReplace"]
+    E -->|"other / fallback"| F5["@OnChange"]
+    F1 & F2 & F3 & F4 & F5 --> G["Handler invoked"]
+    G --> H[("_fw_checkpoints\nresume token saved")]
 ```
 
 ### @Pipeline vs @Filter
@@ -150,11 +122,11 @@ MongoDB Oplog
   <Tab title="Combined — Funnel approach">
     The two approaches are complementary. Use `@Pipeline` to reduce network traffic, then `@Filter` for precise application-level control.
 
-    ```
-    Full oplog
-      └─► @Pipeline (MongoDB, network-efficient)
-            └─► @Filter (Java, flexible)
-                  └─► Handler
+    ```mermaid
+    flowchart LR
+        A[("Full oplog")] -->|"server-side"| B["@Pipeline\nMongoDB aggregation"]
+        B -->|"app-side"| C["@Filter\nJava predicate"]
+        C --> D["Handler"]
     ```
   </Tab>
 </Tabs>
