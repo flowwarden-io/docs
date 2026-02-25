@@ -1,6 +1,6 @@
 ---
 title: "@EnableFlowWarden"
-description: "Activate FlowWarden auto-configuration and component scanning"
+description: "Activate FlowWarden Change Stream processing"
 icon: "power-off"
 ---
 
@@ -79,9 +79,9 @@ present, three auto-configuration classes activate in order:
 
 | Class | Condition | Provides |
 |-------|-----------|----------|
-| `FlowWardenAutoConfiguration` | Always | `ChangeStreamBeanPostProcessor`, `FlowWardenConfigurationValidator`, `CheckpointStore` |
-| `ImperativeFlowWardenAutoConfiguration` | `flowwarden.default-mode=IMPERATIVE` (or missing) | `ImperativeStreamManager` |
-| `ReactiveFlowWardenAutoConfiguration` | `flowwarden.default-mode=REACTIVE` | `ReactiveStreamManager` |
+| `FlowWardenAutoConfiguration` | Always | `ChangeStreamBeanPostProcessor`, `FlowWardenConfigurationValidator` |
+| `ImperativeFlowWardenAutoConfiguration` | `flowwarden.default-mode=IMPERATIVE` (or missing) | `ImperativeStreamManager`, `CheckpointStore` → `MongoCheckpointStore` |
+| `ReactiveFlowWardenAutoConfiguration` | `flowwarden.default-mode=REACTIVE` | `ReactiveStreamManager`, `CheckpointStore` → `ReactiveMongoCheckpointStore` |
 
 <Accordion title="Startup validation details">
 
@@ -90,7 +90,6 @@ The `FlowWardenConfigurationValidator` runs after all singleton beans are create
 
 1. **Mode is resolved** — `flowwarden.default-mode` defaults to `IMPERATIVE` if not set
 2. **Template available** — `IMPERATIVE` requires `MongoTemplate`, `REACTIVE` requires `ReactiveMongoTemplate`
-3. **Handler return types** — `void` handlers in `REACTIVE` mode and `Mono<Void>` handlers in `IMPERATIVE` mode are rejected
 
 All errors follow the Spring Boot error format with a `Description` and an `Action` section
 suggesting how to fix the issue.

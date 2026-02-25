@@ -174,21 +174,11 @@ public record Checkpoint(
 
 </Accordion>
 
-## YAML Configuration
+## Configuration
 
-Global defaults can be set in `application.yml` and overridden per stream with the annotation:
-
-```yaml
-flowwarden:
-  stream:
-    checkpoint:
-      save-every-n: 1
-      save-interval-seconds: 5
-```
-
-<Tip>
-  Per-stream YAML overrides are also supported via `flowwarden.streams.{name}.checkpoint.*`. See the [Configuration reference](/reference/configuration) for the full resolution hierarchy.
-</Tip>
+Checkpoint behavior is configured per stream via the `@Checkpoint` annotation attributes.
+There is no YAML/properties equivalent — this is by design to keep configuration co-located
+with the handler code.
 
 ## Best Practices
 
