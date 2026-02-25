@@ -119,15 +119,30 @@ FlowWarden uses a **dual-token checkpoint** model internally:
 
 This distinction enables **at-least-once delivery guarantees**: if the application crashes after receiving an event but before processing it, the stream resumes from `lastProcessedToken`, ensuring the event is re-delivered.
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Event E1 received   → lastSeenToken = E1                    │
-│  Event E1 processed  → lastProcessedToken = E1               │
-│  Event E2 received   → lastSeenToken = E2                    │
-│  ── crash ──                                                 │
-│  Restart             → resume from lastProcessedToken (E1)   │
-│  Event E2 re-delivered and processed                         │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant CS as Change Stream
+    participant FW as FlowWarden
+    participant CP as CheckpointStore
+
+    CS->>FW: Event E1 received
+    Note over FW: lastSeenToken = E1
+    FW->>FW: Process E1 ✓
+    FW->>CP: save(lastProcessedToken = E1)
+
+    CS->>FW: Event E2 received
+    Note over FW: lastSeenToken = E2
+    FW-xFW: 💥 Crash before processing
+
+    Note over FW,CP: ── Application restarts ──
+
+    FW->>CP: findByStreamName()
+    CP-->>FW: lastProcessedToken = E1
+    FW->>CS: Resume from E1
+
+    CS->>FW: Event E2 re-delivered
+    FW->>FW: Process E2 ✓
+    FW->>CP: save(lastProcessedToken = E2)
 ```
 
 ## Checkpoint Storage (SPI)
