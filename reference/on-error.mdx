@@ -1,0 +1,294 @@
+---
+title: "@OnError"
+description: "Intercept and control error handling before the standard retry/DLQ chain"
+icon: "triangle-exclamation"
+---
+
+The `@OnError` annotation marks a method as a **custom error handler** inside a `@ChangeStream` class. When a handler method throws an exception, FlowWarden consults `@OnError` methods **before** the standard retry/DLQ chain, giving you full control over what happens next.
+
+## Basic Usage
+
+```java
+@ChangeStream(name = "order-watcher", collection = "orders")
+@RetryPolicy(maxAttempts = 3)
+@DeadLetterQueue
+public class OrderStreamHandler {
+
+    @OnInsert
+    void handle(ChangeStreamContext<Order> ctx) {
+        orderService.process(ctx.getFullDocument(Order.class));
+    }
+
+    @OnError
+    ErrorAction handleError(Throwable ex, ChangeStreamContext<?> ctx) {
+        if (ex instanceof IllegalArgumentException) {
+            log.warn("Invalid data, skipping: {}", ex.getMessage());
+            return ErrorAction.SKIP;
+        }
+        return ErrorAction.RETHROW;  // let standard retry/DLQ handle it
+    }
+}
+```
+
+## Method Signature
+
+`@OnError` methods **must** follow this exact signature:
+
+```java
+ErrorAction methodName(Throwable ex, ChangeStreamContext<?> ctx)
+```
+
+| Element | Requirement |
+|---------|-------------|
+| Return type | `ErrorAction` (required) |
+| First parameter | `Throwable` (or any subclass) |
+| Second parameter | `ChangeStreamContext<?>` |
+
+<Warning>
+  Any other signature will cause a `BeanCreationException` at startup. The return type must be `ErrorAction` — `void` is not supported. The parameter order is `(Throwable, ChangeStreamContext)`, not the reverse.
+</Warning>
+
+## Attribute
+
+| Attribute | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `value` | `Class<? extends Throwable>[]` | `{}` | Exception types this handler matches. Empty = catch-all |
+
+## ErrorAction
+
+The return value of an `@OnError` method tells FlowWarden what to do next:
+
+| Action | Behavior |
+|--------|----------|
+| `SKIP` | Ignore the event. Logs a warning, no retry, no DLQ. Stream continues. |
+| `RETRY` | Force a retry. Respects `@RetryPolicy.maxAttempts` if present. |
+| `DLQ` | Send directly to the Dead Letter Queue, bypassing any remaining retries. |
+| `RETHROW` | Let FlowWarden handle with the standard policy (retry chain → DLQ). |
+
+## Exception Filtering
+
+### Typed Handlers
+
+Target specific exception types using the `value` attribute:
+
+```java
+@OnError(NullPointerException.class)
+ErrorAction onNpe(Throwable ex, ChangeStreamContext<?> ctx) {
+    log.warn("NPE detected, skipping event: {}", ctx.getEventId());
+    return ErrorAction.SKIP;
+}
+
+@OnError(RuntimeException.class)
+ErrorAction onRuntime(Throwable ex, ChangeStreamContext<?> ctx) {
+    log.error("Runtime error, sending to DLQ: {}", ex.getMessage());
+    return ErrorAction.DLQ;
+}
+```
+
+### Multiple Exception Types
+
+A single handler can match multiple exception types:
+
+```java
+@OnError({ValidationException.class, BusinessException.class})
+ErrorAction onBusinessError(Throwable ex, ChangeStreamContext<?> ctx) {
+    if (ex instanceof ValidationException) {
+        return ErrorAction.SKIP;
+    }
+    return ErrorAction.DLQ;
+}
+```
+
+### Catch-All Handler
+
+Omit `value` (or set it to `{}`) to create a catch-all that handles any unmatched exception:
+
+```java
+@OnError
+ErrorAction catchAll(Throwable ex, ChangeStreamContext<?> ctx) {
+    log.error("Unexpected error on event {}: {}", ctx.getEventId(), ex.getMessage());
+    return ErrorAction.RETHROW;
+}
+```
+
+## Resolution Order
+
+When multiple `@OnError` methods exist, FlowWarden picks the **most specific** match:
+
+```
+1. @OnError with exact type match
+2. @OnError with parent type match (closest in hierarchy)
+3. @OnError catch-all (empty value)
+4. Standard @RetryPolicy chain
+5. @DeadLetterQueue
+```
+
+<Accordion title="Resolution example">
+
+Given these handlers:
+
+```java
+@OnError(NullPointerException.class)          // specific
+ErrorAction onNpe(Throwable ex, ChangeStreamContext<?> ctx) { ... }
+
+@OnError(RuntimeException.class)              // parent
+ErrorAction onRuntime(Throwable ex, ChangeStreamContext<?> ctx) { ... }
+
+@OnError                                      // catch-all
+ErrorAction catchAll(Throwable ex, ChangeStreamContext<?> ctx) { ... }
+```
+
+| Exception thrown | Handler called | Reason |
+|-----------------|----------------|--------|
+| `NullPointerException` | `onNpe` | Exact match (distance 0) |
+| `IllegalStateException` | `onRuntime` | Parent match (RuntimeException) |
+| `IOException` | `catchAll` | No match for NPE or RuntimeException |
+
+</Accordion>
+
+## Comprehensive Example
+
+<CodeGroup>
+
+```java Imperative
+@ChangeStream(name = "order-stream", collection = "orders", documentType = Order.class)
+@RetryPolicy(maxAttempts = 5, initialDelay = "500ms", multiplier = 2.0)
+@DeadLetterQueue(collection = "orders_dlq", ttlDays = 30)
+public class OrderStreamHandler {
+
+    @OnInsert
+    void onNewOrder(ChangeStreamContext<Order> ctx) {
+        Order order = ctx.getFullDocument(Order.class);
+        orderService.process(order);
+    }
+
+    @OnError(ValidationException.class)
+    ErrorAction onValidation(Throwable ex, ChangeStreamContext<?> ctx) {
+        // Validation errors won't be fixed by retrying
+        log.warn("Validation failed for order {}: {}",
+            ctx.getDocumentKey(), ex.getMessage());
+        return ErrorAction.SKIP;
+    }
+
+    @OnError(PaymentGatewayException.class)
+    ErrorAction onPaymentError(Throwable ex, ChangeStreamContext<?> ctx) {
+        if (((PaymentGatewayException) ex).isTransient()) {
+            return ErrorAction.RETRY;   // network blip, try again
+        }
+        return ErrorAction.DLQ;         // permanent payment failure
+    }
+
+    @OnError
+    ErrorAction catchAll(Throwable ex, ChangeStreamContext<?> ctx) {
+        log.error("Unexpected error on order {} (attempt {}): {}",
+            ctx.getDocumentKey(), ctx.getAttemptNumber(), ex.getMessage());
+        return ErrorAction.RETHROW;     // let standard retry/DLQ handle it
+    }
+}
+```
+
+```java Reactive
+@ChangeStream(name = "order-stream", collection = "orders", documentType = Order.class)
+@RetryPolicy(maxAttempts = 5, initialDelay = "500ms", multiplier = 2.0)
+@DeadLetterQueue(collection = "orders_dlq", ttlDays = 30)
+public class OrderStreamHandler {
+
+    @OnInsert
+    Mono<Void> onNewOrder(ChangeStreamContext<Order> ctx) {
+        Order order = ctx.getFullDocument(Order.class);
+        return orderService.processReactive(order);
+    }
+
+    @OnError(ValidationException.class)
+    ErrorAction onValidation(Throwable ex, ChangeStreamContext<?> ctx) {
+        log.warn("Validation failed for order {}: {}",
+            ctx.getDocumentKey(), ex.getMessage());
+        return ErrorAction.SKIP;
+    }
+
+    @OnError(PaymentGatewayException.class)
+    ErrorAction onPaymentError(Throwable ex, ChangeStreamContext<?> ctx) {
+        if (((PaymentGatewayException) ex).isTransient()) {
+            return ErrorAction.RETRY;
+        }
+        return ErrorAction.DLQ;
+    }
+
+    @OnError
+    ErrorAction catchAll(Throwable ex, ChangeStreamContext<?> ctx) {
+        log.error("Unexpected error on order {} (attempt {}): {}",
+            ctx.getDocumentKey(), ctx.getAttemptNumber(), ex.getMessage());
+        return ErrorAction.RETHROW;
+    }
+}
+```
+
+</CodeGroup>
+
+<Note>
+  `@OnError` methods always use the imperative signature — even in reactive streams. The reactive handler may return `Mono.error()`, but the error handler itself is synchronous and returns an `ErrorAction` directly.
+</Note>
+
+## How It Works
+
+```mermaid
+flowchart TD
+    A[Handler throws exception] --> B{Find matching @OnError}
+    B -->|Exact type match| C[Invoke handler]
+    B -->|Parent type match| C
+    B -->|Catch-all match| C
+    B -->|No match| G{@RetryPolicy present?}
+    C --> D{ErrorAction returned}
+    D -->|SKIP| E[⏭️ Ignore event, continue stream]
+    D -->|RETRY| F[🔄 Retry with backoff]
+    D -->|DLQ| H[📥 Send to Dead Letter Queue]
+    D -->|RETHROW| G
+    G -->|Yes| F
+    G -->|No| I{@DeadLetterQueue present?}
+    I -->|Yes| H
+    I -->|No| J[❌ Event lost]
+```
+
+## Validation Rules
+
+FlowWarden validates `@OnError` methods at startup and will throw a `BeanCreationException` if:
+
+| Rule | Error |
+|------|-------|
+| Return type is not `ErrorAction` | "must return ErrorAction" |
+| Wrong parameter count or types | "must have signature: ErrorAction method(Throwable ex, ChangeStreamContext<?> ctx)" |
+| Multiple catch-all handlers | "has multiple catch-all @OnError methods. At most one is allowed" |
+| Duplicate exception types | "has duplicate @OnError for exception type: ..." |
+
+## Error Handler Safety
+
+If an `@OnError` method **itself** throws an exception, FlowWarden catches it, logs the error, and falls back to `ErrorAction.RETHROW`. This prevents error handlers from crashing the stream.
+
+## Best Practices
+
+- **Use `SKIP` for programming errors** (validation failures, malformed data) that retrying won't fix.
+- **Use `RETRY` for known transient errors** where you want to bypass the exception type checks of `@RetryPolicy.noRetryOn`.
+- **Use `DLQ` to short-circuit retries** when you can determine that an error is permanent (e.g., external service returns HTTP 404).
+- **Use `RETHROW` as a safe default** in catch-all handlers — it lets the standard retry/DLQ chain do its job.
+- **Keep error handlers simple.** Avoid calling external services or performing database operations in `@OnError` methods — they should be fast decision-makers, not processors.
+
+<Tip>
+  Use `ctx.getAttemptNumber()` in your error handler to make decisions based on the retry count. For example, return `RETRY` on first attempt but `DLQ` on subsequent attempts.
+</Tip>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="@RetryPolicy" icon="rotate-right" href="/reference/retry-policy">
+    Configure exponential backoff retry for failed handlers
+  </Card>
+  <Card title="@DeadLetterQueue" icon="box-archive" href="/reference/dead-letter-queue">
+    Capture failed events for later investigation and reprocessing
+  </Card>
+  <Card title="Event Handlers" icon="bolt" href="/reference/event-handlers">
+    @OnChange, @OnInsert, @OnUpdate, @OnDelete handler reference
+  </Card>
+  <Card title="ChangeStreamContext" icon="circle-info" href="/reference/change-stream-context">
+    Runtime context including attempt number, event ID, and sendToDlq()
+  </Card>
+</CardGroup>
