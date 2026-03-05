@@ -102,10 +102,9 @@ public class OrderStreamHandler {
     }
 
     @OnError
-    void onError(ChangeStreamContext<Order> ctx, Throwable error) {
+    ErrorAction onError(Throwable error, ChangeStreamContext<?> ctx) {
         log.error("Order {} failed: {}", ctx.getDocumentKey(), error.getMessage());
-        // Manually send to DLQ with a custom reason
-        ctx.sendToDlq("Processing error: " + error.getMessage());
+        return ErrorAction.DLQ;
     }
 }
 ```
@@ -130,10 +129,9 @@ public class OrderStreamHandler {
     }
 
     @OnError
-    Mono<Void> onError(ChangeStreamContext<Order> ctx, Throwable error) {
+    ErrorAction onError(Throwable error, ChangeStreamContext<?> ctx) {
         log.error("Order {} failed: {}", ctx.getDocumentKey(), error.getMessage());
-        ctx.sendToDlq("Processing error: " + error.getMessage());
-        return Mono.empty();
+        return ErrorAction.DLQ;
     }
 }
 ```
