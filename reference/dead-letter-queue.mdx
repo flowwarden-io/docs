@@ -4,24 +4,7 @@ description: "Automatically capture failed events for later investigation and re
 icon: "box-archive"
 ---
 
-The `@DeadLetterQueue` annotation enables **automatic routing of failed events** to a dedicated MongoDB collection. When a handler throws an exception — and all retries are exhausted if `@RetryPolicy` is present — the event is persisted in the DLQ instead of being silently lost. The stream **continues processing** subsequent events without blocking.
-
-## Basic Usage
-
-```java
-@ChangeStream(name = "order-watcher", collection = "orders")
-@RetryPolicy(maxAttempts = 3)
-@DeadLetterQueue
-public class OrderStreamHandler {
-
-    @OnInsert
-    void handle(ChangeStreamContext<Order> ctx) {
-        orderService.process(ctx.getFullDocument(Order.class));
-    }
-}
-```
-
-With the default configuration, failed events are stored in the `_fw_dlq` collection with a **30-day TTL**, including the original document and full stack trace.
+The `@DeadLetterQueue` annotation enables **automatic routing of failed events** to a dedicated MongoDB collection. When a handler throws an exception — and all retries are exhausted if `@RetryPolicy` is present — the event is persisted in the DLQ instead of being silently lost.
 
 ## Attributes
 
@@ -61,169 +44,6 @@ These control what data is captured in the DLQ entry. Disabling them can reduce 
 ```java
 // Minimal DLQ entry — only metadata, no document or stack trace
 @DeadLetterQueue(includeOriginalDocument = false, includeStackTrace = false)
-```
-
-## With and Without `@RetryPolicy`
-
-`@DeadLetterQueue` works with or without `@RetryPolicy`:
-
-| Configuration | Behavior |
-|---------------|----------|
-| `@RetryPolicy` + `@DeadLetterQueue` | Event is retried up to `maxAttempts` times. If all retries fail, the event is sent to the DLQ. |
-| `@DeadLetterQueue` only | Event is sent to the DLQ **immediately** after the first failure. |
-| `@RetryPolicy` only | Event is retried, but if all retries fail, the event is **lost**. |
-| Neither | Event is lost on first failure. |
-
-<Warning>
-  Without `@DeadLetterQueue`, failed events that exhaust all retries are permanently lost. Always pair `@RetryPolicy` with `@DeadLetterQueue` for critical streams.
-</Warning>
-
-## Comprehensive Example
-
-<CodeGroup>
-
-```java Imperative
-@ChangeStream(
-    name = "order-stream",
-    collection = "orders",
-    documentType = Order.class,
-    operationTypes = { OperationType.INSERT, OperationType.UPDATE }
-)
-@RetryPolicy(maxAttempts = 5, initialDelay = "500ms", multiplier = 2.0)
-@DeadLetterQueue(collection = "orders_dlq", ttlDays = 90)
-public class OrderStreamHandler {
-
-    @OnInsert
-    void onNewOrder(ChangeStreamContext<Order> ctx) {
-        Order order = ctx.getFullDocument(Order.class);
-        log.info("Processing order {} (attempt {})",
-            order.getId(), ctx.getAttemptNumber());
-        orderService.process(order);
-    }
-
-    @OnError
-    ErrorAction onError(Throwable error, ChangeStreamContext<?> ctx) {
-        log.error("Order {} failed: {}", ctx.getDocumentKey(), error.getMessage());
-        return ErrorAction.DLQ;
-    }
-}
-```
-
-```java Reactive
-@ChangeStream(
-    name = "order-stream",
-    collection = "orders",
-    documentType = Order.class,
-    operationTypes = { OperationType.INSERT, OperationType.UPDATE }
-)
-@RetryPolicy(maxAttempts = 5, initialDelay = "500ms", multiplier = 2.0)
-@DeadLetterQueue(collection = "orders_dlq", ttlDays = 90)
-public class OrderStreamHandler {
-
-    @OnInsert
-    Mono<Void> onNewOrder(ChangeStreamContext<Order> ctx) {
-        Order order = ctx.getFullDocument(Order.class);
-        log.info("Processing order {} (attempt {})",
-            order.getId(), ctx.getAttemptNumber());
-        return orderService.processReactive(order);
-    }
-
-    @OnError
-    ErrorAction onError(Throwable error, ChangeStreamContext<?> ctx) {
-        log.error("Order {} failed: {}", ctx.getDocumentKey(), error.getMessage());
-        return ErrorAction.DLQ;
-    }
-}
-```
-
-</CodeGroup>
-
-## Manual DLQ Routing
-
-You can manually send an event to the DLQ from any handler using `ctx.sendToDlq(reason)`. This is useful when you detect a business-level error that shouldn't be retried.
-
-```java
-@OnInsert
-void handle(ChangeStreamContext<Order> ctx) {
-    Order order = ctx.getFullDocument(Order.class);
-
-    if (order.getTotal() < 0) {
-        // Business validation failure — don't retry, send straight to DLQ
-        ctx.sendToDlq("Invalid order total: " + order.getTotal());
-        return;
-    }
-
-    orderService.process(order);
-}
-```
-
-<Note>
-  `sendToDlq()` requires a `DlqStore` bean to be available. The MongoDB implementation (`MongoDlqStore`) is auto-configured when `@DeadLetterQueue` is present on any stream.
-</Note>
-
-## DLQ Document Schema
-
-Each failed event is stored as a MongoDB document in the DLQ collection:
-
-<Accordion title="DLQ document structure">
-
-```json
-{
-  "_id": "550e8400-e29b-41d4-a716-446655440000",
-  "streamName": "order-stream",
-  "operationType": "INSERT",
-  "documentKey": { "_id": "64f1a2b3c4d5e6f7a8b9c0d1" },
-  "fullDocument": {
-    "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
-    "status": "PAID",
-    "total": 99.99
-  },
-  "resumeToken": { ... },
-  "error": {
-    "type": "java.lang.RuntimeException",
-    "message": "Connection refused to payment gateway",
-    "stackTrace": "java.lang.RuntimeException: Connection refused..."
-  },
-  "attempts": 3,
-  "status": "PENDING",
-  "firstAttemptAt": "2026-01-15T10:30:00Z",
-  "lastAttemptAt": "2026-01-15T10:30:05Z",
-  "createdAt": "2026-01-15T10:30:05Z",
-  "expiresAt": "2026-02-14T10:30:05Z",
-  "metadata": {}
-}
-```
-
-</Accordion>
-
-| Field | Description |
-|-------|-------------|
-| `streamName` | Name of the originating `@ChangeStream` |
-| `operationType` | MongoDB operation (`INSERT`, `UPDATE`, `DELETE`, etc.) |
-| `documentKey` | `_id` of the source document |
-| `fullDocument` | Original document (if `includeOriginalDocument = true`) |
-| `error.type` | Exception class name |
-| `error.message` | Exception message |
-| `error.stackTrace` | Full stack trace (if `includeStackTrace = true`) |
-| `attempts` | Total number of processing attempts (including retries) |
-| `status` | Event status (`PENDING`) |
-| `expiresAt` | Computed from `createdAt + ttlDays` (`null` if `ttlDays = 0`) |
-
-## How It Works
-
-```mermaid
-flowchart TD
-    A[Event received] --> B[Invoke handler]
-    B -->|Success| C[✅ Event processed]
-    B -->|Exception| D{@RetryPolicy present?}
-    D -->|Yes| E{Retries exhausted?}
-    D -->|No| F{@DeadLetterQueue present?}
-    E -->|No| G[Retry with backoff]
-    G --> B
-    E -->|Yes| F
-    F -->|Yes| H[Send to DLQ]
-    H --> I[✅ Stream continues]
-    F -->|No| J[❌ Event lost]
 ```
 
 ## DLQ Storage SPI
@@ -287,18 +107,6 @@ flowwarden:
       retention-days: 30
 ```
 
-## Best Practices
-
-- **Always pair `@RetryPolicy` with `@DeadLetterQueue`** for critical streams. Retry handles transient errors; the DLQ captures permanent failures.
-- **Use `sendToDlq(reason)` for business validation failures** that you know retrying won't fix (e.g., invalid data, missing required fields).
-- **Set `ttlDays` based on your investigation SLA.** 30 days is a good default. Use `ttlDays = 0` for regulatory or audit-critical streams.
-- **Disable `includeOriginalDocument` for large documents** if storage is a concern. You can always look up the document by `documentKey`.
-- **Monitor the `_fw_dlq` collection** — growing DLQ entries indicate a handler issue that needs attention.
-
-<Tip>
-  DLQ events can be viewed and reprocessed via FlowWarden Console. The Core library is intentionally **write-only** for the DLQ — reading and replaying is a Console feature.
-</Tip>
-
 ## Roadmap
 
 The following attributes are planned but not yet implemented:
@@ -314,7 +122,7 @@ The following attributes are planned but not yet implemented:
 
 <CardGroup cols={2}>
   <Card title="Retry & DLQ Guide" icon="map" href="/guides/retry-and-dlq">
-    Step-by-step guide to configuring retry and dead letter queue behavior
+    Understand DLQ routing, manual sends, document schema, and best practices
   </Card>
   <Card title="@RetryPolicy" icon="rotate-right" href="/reference/retry-policy">
     Configure exponential backoff retry for failed handlers
