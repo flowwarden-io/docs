@@ -30,6 +30,7 @@ With the default configuration, a checkpoint is saved **after every event** and 
 | `saveEveryN` | `int` | `1` | Save a checkpoint every N successfully processed events |
 | `saveIntervalSeconds` | `int` | `5` | Periodic checkpoint interval in seconds (heartbeat). Set to `0` to disable |
 | `startPosition` | `StartPosition` | `RESUME` | Where to start consuming when the stream starts |
+| `onHistoryLost` | `OnHistoryLost` | `FAIL` | Strategy when the saved resume token has expired from the oplog |
 
 <Note>
   Checkpoints are stored in the `_fw_checkpoints` collection in your MongoDB database.
@@ -72,6 +73,46 @@ Determines where the stream starts consuming when it is first created or when no
 |-------|-------------|
 | `RESUME` | Resume from the last persisted checkpoint. If no checkpoint exists, starts from the latest event. **(default)** |
 | `LATEST` | Ignore any existing checkpoint and start from the latest event. |
+
+### `onHistoryLost`
+
+Determines the recovery strategy when the saved resume token has expired from the MongoDB oplog. This happens when a stream is stopped for longer than the oplog retention window.
+
+| Strategy | Events in gap | Behavior |
+|----------|---------------|----------|
+| `FAIL` | Unknown | Stream refuses to start. Throws `HistoryLostException`. Operator must intervene. **(default)** |
+| `RESUME_FROM_OPLOG_START` | Partially lost | Resumes from the oldest available oplog entry. Falls back to `RESUME_FROM_NOW` if the oplog is inaccessible. |
+| `RESUME_FROM_NOW` | All lost | Starts from the current moment. The entire gap is skipped — no replay. |
+
+```java
+// Default: fail loudly — operator must decide
+@Checkpoint(onHistoryLost = OnHistoryLost.FAIL)
+
+// Resume from oldest available oplog entry (partial recovery)
+@Checkpoint(onHistoryLost = OnHistoryLost.RESUME_FROM_OPLOG_START)
+
+// Skip gap entirely — for streams where missing events is acceptable
+@Checkpoint(onHistoryLost = OnHistoryLost.RESUME_FROM_NOW)
+```
+
+<Warning>
+  `FAIL` is the default because **silent data loss is worse than a stream that refuses to start**. Only use `RESUME_FROM_NOW` or `RESUME_FROM_OPLOG_START` for streams where missing events is acceptable (e.g., cache invalidation, non-critical notifications).
+</Warning>
+
+<Accordion title="HistoryLostException">
+
+When `onHistoryLost = FAIL`, the framework throws a `HistoryLostException` with an actionable message:
+
+```java
+public class HistoryLostException extends RuntimeException {
+    public String getStreamName();
+    public Instant getLastCheckpointTimestamp();
+}
+```
+
+The exception message includes the stream name, the last checkpoint timestamp, and suggestions for recovery strategies.
+
+</Accordion>
 
 ## Comprehensive Example
 
@@ -154,8 +195,20 @@ public interface CheckpointStore {
     void save(Checkpoint checkpoint);
     Optional<Checkpoint> findByStreamName(String streamName);
     void delete(String streamName);
+
+    /** Returns a shared no-op implementation that silently ignores all calls. */
+    static CheckpointStore noOp();
 }
 ```
+
+The framework ships with two auto-configured implementations:
+
+| Implementation | Module | When active |
+|----------------|--------|-------------|
+| `MongoCheckpointStore` | `flowwarden-stream-starter` | Imperative Spring Data MongoDB on classpath |
+| `ReactiveMongoCheckpointStore` | `flowwarden-stream-starter` | Reactive Spring Data MongoDB on classpath |
+
+Both store checkpoints in the same `_fw_checkpoints` collection with the same document format, so switching between imperative and reactive mode is transparent.
 
 <Accordion title="Checkpoint record structure">
 

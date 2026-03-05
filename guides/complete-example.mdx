@@ -63,8 +63,7 @@ flowchart TB
     collection        = "orders",
     documentType      = Order.class,
     operationTypes    = { OperationType.INSERT, OperationType.UPDATE, OperationType.DELETE },
-    fullDocument      = FullDocumentMode.UPDATE_LOOKUP,
-    deploymentMode    = DeploymentMode.SINGLE_LEADER
+    fullDocument      = FullDocumentMode.UPDATE_LOOKUP
 )
 @Checkpoint(saveEveryN = 5, saveIntervalSeconds = 10)
 @RetryPolicy(maxAttempts = 5, initialDelay = "500ms", multiplier = 2.0, maxDelay = "30s")
@@ -150,8 +149,7 @@ public class OrderStreamHandler {
     collection        = "orders",
     documentType      = Order.class,
     operationTypes    = { OperationType.INSERT, OperationType.UPDATE, OperationType.DELETE },
-    fullDocument      = FullDocumentMode.UPDATE_LOOKUP,
-    deploymentMode    = DeploymentMode.SINGLE_LEADER
+    fullDocument      = FullDocumentMode.UPDATE_LOOKUP
 )
 @Checkpoint(saveEveryN = 5, saveIntervalSeconds = 10)
 @RetryPolicy(maxAttempts = 5, initialDelay = "500ms", multiplier = 2.0, maxDelay = "30s")
@@ -289,7 +287,7 @@ Each annotation controls a specific aspect of the processing pipeline:
 
 | Annotation | Level | Purpose | Key Attributes |
 |-----------|-------|---------|----------------|
-| `@ChangeStream` | Class | Declares the stream, binds to a collection | `name`, `collection`, `documentType`, `fullDocument`, `deploymentMode` |
+| `@ChangeStream` | Class | Declares the stream, binds to a collection | `name`, `collection`, `documentType`, `fullDocument` |
 | `@Checkpoint` | Class | Persists resume tokens for crash recovery | `saveEveryN`, `saveIntervalSeconds`, `startPosition` |
 | `@RetryPolicy` | Class | Retries failed handlers with exponential backoff | `maxAttempts`, `initialDelay`, `multiplier`, `maxDelay`, `jitter` |
 | `@DeadLetterQueue` | Class | Captures events that exhaust all retries | `collection`, `ttlDays`, `includeOriginalDocument` |

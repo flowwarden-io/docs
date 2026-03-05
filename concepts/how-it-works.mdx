@@ -182,7 +182,6 @@ FlowWarden uses three internal collections in your database. You do not need to 
 |-----------|---------|
 | `_fw_checkpoints` | Stores resume tokens for each stream. Loaded on startup to resume from the last processed event. |
 | `_fw_dlq` | Dead Letter Queue. Failed events that exhausted all retry attempts are written here. |
-| `_fw_locks` | Distributed locks for `SINGLE_LEADER` deployment mode. Used for leader election across multiple instances. |
 
 <Note>
 All internal collections are prefixed with `_fw_` to avoid collisions with your application data. They are created with appropriate indexes on first use.

@@ -157,6 +157,19 @@ void onReplace(Order doc, ChangeStreamContext<Order> ctx) {
 - If no typed handler matches the event, `@OnChange` is used as fallback (if present)
 - If neither a typed handler nor `@OnChange` matches, the event is silently skipped
 
+<Warning>
+  A method may only carry **one** typed handler annotation. Combining annotations like `@OnUpdate` and `@OnReplace` on the same method causes a `BeanCreationException` at startup.
+
+  ```java
+  // DON'T — this fails at startup
+  @OnUpdate
+  @OnReplace
+  void handle(ChangeStreamContext<Order> ctx) { ... }
+  ```
+
+  Instead, use separate methods for each operation type.
+</Warning>
+
 ## Supported Signatures
 
 ### Parameter Styles
@@ -330,6 +343,7 @@ FlowWarden validates handler methods at startup. Here are the common errors:
 | "must have at least one handler method" | `@ChangeStream` class has no `@OnChange`, `@OnInsert`, etc. | Add at least one handler method. |
 | "must have exactly one @OnChange method" | Multiple `@OnChange` methods in the same class. | Keep only one `@OnChange`. |
 | "must have at most one @OnInsert method" | Duplicate typed handler for the same operation. | Keep only one per type. |
+| "carries both @OnUpdate and @OnReplace" | Method has multiple typed handler annotations. | Use one annotation per method — split into separate methods. |
 | "uses a document-typed signature but documentType is Document.class" | Handler uses `(T doc, ...)` but no concrete `documentType` is set. | Set `documentType = YourClass.class` on `@ChangeStream`. |
 | "has invalid signature" | Method parameters don't match any supported style. | Use one of the three supported signatures. |
 | "has unsupported return type" | Return type is not `void` or `Mono<Void>`. | Use `void` (imperative) or `Mono<Void>` (reactive). |

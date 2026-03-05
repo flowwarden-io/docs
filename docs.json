@@ -31,8 +31,7 @@
               "guides/imperative-vs-reactive",
               "guides/filtering-events",
               "guides/checkpoint-resume",
-              "guides/retry-and-dlq",
-              "guides/deployment-modes"
+              "guides/retry-and-dlq"
             ]
           }
         ]

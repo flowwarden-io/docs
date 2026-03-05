@@ -140,10 +140,11 @@ For high-throughput streams, increase `saveEveryN` to reduce write pressure and 
 
 ```java
 @Checkpoint(
-    strategy          = CheckpointStrategy.MONGODB,  // storage backend
-    saveEveryN        = 1,                           // checkpoint every N events
-    saveIntervalSeconds = 5,                         // periodic heartbeat (0 = disabled)
-    startPosition     = StartPosition.RESUME         // where to start on boot
+    strategy            = CheckpointStrategy.MONGODB,  // storage backend
+    saveEveryN          = 1,                           // checkpoint every N events
+    saveIntervalSeconds = 5,                           // periodic heartbeat (0 = disabled)
+    startPosition       = StartPosition.RESUME,        // where to start on boot
+    onHistoryLost       = OnHistoryLost.FAIL            // when resume token expires from oplog
 )
 ```
 
@@ -153,6 +154,7 @@ For high-throughput streams, increase `saveEveryN` to reduce write pressure and 
 | `saveEveryN` | `int` | `1` | Save after every N successfully processed events. Must be > 0. |
 | `saveIntervalSeconds` | `int` | `5` | Periodic save interval in seconds. Set to `0` to disable. Must be ≥ 0. |
 | `startPosition` | `StartPosition` | `RESUME` | `RESUME` to reload last checkpoint; `LATEST` to ignore it. |
+| `onHistoryLost` | `OnHistoryLost` | `FAIL` | Strategy when the saved resume token has expired from the oplog. See [@Checkpoint reference](/reference/checkpoint#onhistorylost). |
 
 ---
 
@@ -165,8 +167,13 @@ Each document is keyed by stream name and contains the resume token and metadata
 ```json
 {
   "_id": "order-stream",
+  "instanceId": "app-1",
+  "lastSeenToken": { "$binary": { ... } },
+  "lastSeenTimestamp": "2026-02-25T10:00:01Z",
   "lastProcessedToken": { "$binary": { ... } },
-  "lastProcessedAt": "2026-02-25T10:00:00Z"
+  "lastProcessedTimestamp": "2026-02-25T10:00:00Z",
+  "filterHash": "a1b2c3",
+  "metadata": {}
 }
 ```
 
@@ -241,8 +248,5 @@ public class NotificationStream { ... }
   </Card>
   <Card title="Filtering Events" icon="filter" href="/guides/filtering-events">
     How filtered events interact with resume tokens
-  </Card>
-  <Card title="Deployment Modes" icon="server" href="/guides/deployment-modes">
-    Checkpointing in multi-instance deployments
   </Card>
 </CardGroup>
