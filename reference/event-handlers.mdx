@@ -176,6 +176,10 @@ This is equivalent to `@OnChange(operationTypes = {INSERT, UPDATE})`, but uses t
   This is especially convenient when used with `@Filter`, since `@Filter` requires that all covered operation types have a `fullDocument`. Combining `@OnInsert` and `@OnUpdate` is safe — both have a full document available.
 </Tip>
 
+<Warning>
+  Combining annotations **with** and **without** `fullDocument` on the same method (e.g. `@OnUpdate @OnDelete`) emits a warning at startup. DELETE, DROP, and INVALIDATE events have no full document — the document parameter will be `null` for those events. Either use separate methods or handle the `null` case explicitly in your handler.
+</Warning>
+
 <Accordion title="Equivalence with @OnChange(operationTypes)">
   These two approaches produce the same behavior:
 
