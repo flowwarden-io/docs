@@ -1,0 +1,123 @@
+---
+title: "Heartbeat & Metrics"
+description: "What the Reporter sends to the Console, how often, and what happens when things go wrong."
+icon: "heart-pulse"
+---
+
+The Reporter sends a **heartbeat** to the FlowWarden Console at regular intervals (default: every 30 seconds). Each heartbeat is a Protobuf message containing a snapshot of all your Change Streams, JVM health, and deployment metadata.
+
+## Heartbeat Contents
+
+```protobuf
+message Heartbeat {
+  string instance_id = 1;
+  int64 timestamp = 2;
+  repeated StreamStatus streams = 3;
+  SystemMetrics system = 4;
+  DeploymentInfo deployment = 5;
+}
+```
+
+### Stream Status
+
+For each `@ChangeStream` in your application:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Stream name (from `@ChangeStream(name = ...)`) |
+| `status` | enum | `RUNNING`, `PAUSED`, `ERROR`, or `STOPPED` |
+| `events_processed` | long | Total events successfully processed |
+| `events_errors` | long | Total events that caused errors |
+| `dlq_size` | long | Number of events in the dead letter queue |
+| `lag_ms` | long | Processing lag in milliseconds |
+| `resume_token` | bytes | Latest MongoDB resume token |
+| `zone` | string | Zone name (if configured) |
+| `avg_processing_time_ms` | double | Average handler execution time (current window) |
+| `events_per_second` | double | Throughput (current window) |
+| `checkpoint` | CheckpointInfo | Checkpoint health (see below) |
+
+### Checkpoint Info
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `last_seen_age` | long | Seconds since last event was received |
+| `last_processed_age` | long | Seconds since last checkpoint was persisted |
+| `events_behind` | long | Events processed but not yet checkpointed |
+
+<Note>
+  `events_behind > 0` means there are processed events that haven't been checkpointed yet. This is normal during active processing — it becomes a concern only if the value keeps growing.
+</Note>
+
+### System Metrics
+
+JVM health collected via standard APIs (no Micrometer dependency):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `heap_used_mb` | long | Current heap usage in MB |
+| `heap_max_mb` | long | Maximum heap size in MB |
+| `cpu_usage` | double | Process CPU load (0.0 to 1.0, or -1.0 if unavailable) |
+| `active_threads` | int | Number of active threads |
+
+<Tip>
+  `cpu_usage` may return `-1.0` on certain JVM implementations (GraalVM Native, IBM J9) where `com.sun.management.OperatingSystemMXBean` is not available. The Console handles this gracefully.
+</Tip>
+
+### Deployment Info
+
+Auto-detected at startup (see [Instance Identity](/reporter/instance-identity)):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `environment` | string | Resolved environment name |
+| `service_name` | string | `spring.application.name` |
+| `version` | string | Application version |
+| `hostname` | string | Resolved hostname |
+
+## Dynamic Interval
+
+The Console controls the heartbeat frequency via the ACK response:
+
+```json
+{
+  "ack": true,
+  "server_time": 1706954401000,
+  "next_heartbeat_in": 60
+}
+```
+
+When `next_heartbeat_in` is present and greater than 0, the Reporter adjusts its interval accordingly. This allows the Console to:
+- Increase frequency during incidents (e.g. 5s)
+- Decrease frequency for idle applications (e.g. 60s)
+- Adapt based on the organization's plan limits
+
+## Retry & Resilience
+
+If a heartbeat fails (network error, Console unavailable, HTTP 5xx):
+
+1. **Retry up to 3 times** with exponential backoff: 1s, 2s, 4s
+2. **Skip and continue** — if all retries fail, the heartbeat is dropped and the next one is scheduled at the current interval
+3. **No data loss** — stream metrics are cumulative counters, so the next successful heartbeat will contain the full state
+
+The heartbeat loop never crashes. Unexpected exceptions are caught and logged as warnings.
+
+## Wire Format
+
+| Aspect | Detail |
+|--------|--------|
+| Protocol | HTTPS POST |
+| Endpoint | `{console-url}/api/heartbeat` |
+| Content-Type | `application/x-protobuf` |
+| Headers | `X-API-Key`, `X-Instance-Id` |
+| Serialization | Protocol Buffers (binary) |
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/reporter/configuration">
+    Adjust heartbeat interval and other Reporter settings.
+  </Card>
+  <Card title="Instance Identity" icon="fingerprint" href="/reporter/instance-identity">
+    How the Reporter identifies your application instance.
+  </Card>
+</CardGroup>

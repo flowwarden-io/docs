@@ -1,0 +1,135 @@
+---
+title: "Quick Start"
+description: "Add FlowWarden Reporter to your Spring Boot application in 5 minutes."
+icon: "rocket"
+---
+
+## 1. Add the dependency
+
+<CodeGroup>
+```xml Maven
+<dependency>
+    <groupId>io.flowwarden</groupId>
+    <artifactId>flowwarden-reporter</artifactId>
+    <version>1.0.0-MVP-SNAPSHOT</version>
+</dependency>
+```
+
+```groovy Gradle
+implementation 'io.flowwarden:flowwarden-reporter:1.0.0-MVP-SNAPSHOT'
+```
+</CodeGroup>
+
+<Note>
+  The Reporter is currently published to GitHub Packages (private). See the [GitHub Packages setup guide](https://github.com/flowwarden-io/flowwarden-reporter) for Maven repository configuration.
+</Note>
+
+## 2. Configure your application
+
+Add the required properties to your `application.yml`:
+
+```yaml
+flowwarden:
+  api-key: your-api-key-here
+
+  reporter:
+    console-url: https://console.flowwarden.io
+```
+
+That's it. The Reporter auto-configures when it detects Stream Core on the classpath.
+
+## 3. Verify
+
+Start your application. You should see this log line:
+
+```
+INFO  i.f.r.h.HeartbeatSender : HeartbeatSender started (interval=30s, endpoint=https://console.flowwarden.io/api/heartbeat)
+```
+
+Every 30 seconds, the Reporter sends a heartbeat with your stream metrics to the Console.
+
+<Tip>
+  Enable debug logging to see each heartbeat:
+  ```yaml
+  logging:
+    level:
+      io.flowwarden.reporter: DEBUG
+  ```
+</Tip>
+
+## 4. Disable when not needed
+
+To disable the Reporter without removing the dependency:
+
+```yaml
+flowwarden:
+  reporter:
+    enabled: false
+```
+
+No Reporter beans are created — zero overhead.
+
+## What happens at startup
+
+1. **Validation** — checks that `flowwarden.api-key` and `flowwarden.reporter.console-url` are set. If missing, the application fails to start with a clear error message.
+2. **Instance identification** — resolves hostname, environment, service name, and version automatically.
+3. **Metrics collection** — registers as the `StreamMetricsProvider` for Stream Core via the SPI.
+4. **Heartbeat loop** — starts a background thread that sends heartbeats to the Console every 30 seconds (adjustable by the Console).
+
+## Minimal complete example
+
+```java
+@SpringBootApplication
+@EnableFlowWarden
+public class OrderServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(OrderServiceApplication.class, args);
+    }
+}
+
+@ChangeStream(documentType = Order.class)
+@Checkpoint
+public class OrderStreamHandler {
+
+    @OnInsert
+    void onNewOrder(Order order, ChangeStreamContext<Order> ctx) {
+        log.info("New order: {}", order.getId());
+    }
+
+    @OnUpdate
+    void onOrderUpdated(ChangeStreamContext<Order> ctx) {
+        log.info("Order updated: {}", ctx.getDocumentKey());
+    }
+}
+```
+
+```yaml
+# application.yml
+spring:
+  application:
+    name: order-service
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/orders
+
+flowwarden:
+  default-mode: IMPERATIVE
+  api-key: ${FLOWWARDEN_API_KEY}
+
+  reporter:
+    console-url: https://console.flowwarden.io
+    environment: production
+```
+
+With this setup, the Console receives heartbeats containing the status and metrics of `order-stream` every 30 seconds.
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Configuration Reference" icon="gear" href="/reporter/configuration">
+    All available Reporter properties and their defaults.
+  </Card>
+  <Card title="Stream Core Quick Start" icon="bolt" href="/quickstart">
+    Set up FlowWarden Stream Core if you haven't already.
+  </Card>
+</CardGroup>

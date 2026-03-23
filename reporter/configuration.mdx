@@ -1,0 +1,128 @@
+---
+title: "Configuration"
+description: "Complete reference of all FlowWarden Reporter configuration properties."
+icon: "gear"
+---
+
+## Properties
+
+### Required
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `flowwarden.api-key` | `String` | — | API key for authenticating with the FlowWarden Console. **Required** when reporter is enabled. |
+| `flowwarden.reporter.console-url` | `String` | — | URL of the FlowWarden Console (e.g. `https://console.flowwarden.io`). **Required** when reporter is enabled. |
+
+### Optional
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `flowwarden.reporter.enabled` | `boolean` | `true` | Enable or disable the Reporter. When `false`, no Reporter beans are created. |
+| `flowwarden.reporter.environment` | `String` | auto-detected | Logical environment name (e.g. `production`, `staging`). If not set, resolved automatically (see [Instance Identity](/reporter/instance-identity)). |
+| `flowwarden.reporter.heartbeat-interval-seconds` | `int` | `30` | Initial heartbeat interval in seconds. Dynamically adjusted by the Console via the `next_heartbeat_in` field in the ACK response. |
+| `flowwarden.reporter.encryption.enabled` | `boolean` | `true` | Enable AES-GCM encryption of payloads sent to the Console. |
+
+## Example Configuration
+
+<Tabs>
+  <Tab title="application.yml">
+    ```yaml
+    flowwarden:
+      api-key: ${FLOWWARDEN_API_KEY}
+
+      reporter:
+        console-url: https://console.flowwarden.io
+        environment: production
+        heartbeat-interval-seconds: 30
+        encryption:
+          enabled: true
+    ```
+  </Tab>
+  <Tab title="application.properties">
+    ```properties
+    flowwarden.api-key=${FLOWWARDEN_API_KEY}
+    flowwarden.reporter.console-url=https://console.flowwarden.io
+    flowwarden.reporter.environment=production
+    flowwarden.reporter.heartbeat-interval-seconds=30
+    flowwarden.reporter.encryption.enabled=true
+    ```
+  </Tab>
+</Tabs>
+
+## Fail-Fast Validation
+
+The Reporter validates its configuration at startup. If required properties are missing, the application **fails to start** with a clear error message:
+
+```
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+FlowWarden Reporter is enabled but 'flowwarden.api-key' is not set.
+
+Action:
+
+Either:
+1. Set 'flowwarden.api-key' in your application properties or environment variables
+2. Disable the reporter with 'flowwarden.reporter.enabled=false'
+```
+
+```
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+FlowWarden Reporter is enabled but 'flowwarden.reporter.console-url' is not set.
+
+Action:
+
+Either:
+1. Set 'flowwarden.reporter.console-url' to the URL of your FlowWarden Console
+2. Disable the reporter with 'flowwarden.reporter.enabled=false'
+```
+
+<Tip>
+  Use environment variables for sensitive values like the API key:
+  ```yaml
+  flowwarden:
+    api-key: ${FLOWWARDEN_API_KEY}
+  ```
+</Tip>
+
+## Disabling the Reporter
+
+Set `flowwarden.reporter.enabled=false` to completely disable the Reporter. No beans are created, no heartbeats are sent, and the `StreamMetricsProvider` SPI remains at its default no-op implementation.
+
+This is useful for:
+- Local development without a Console
+- Test environments where monitoring is not needed
+- Temporarily disabling reporting without removing the dependency
+
+## Overriding Beans
+
+All Reporter beans are registered with `@ConditionalOnMissingBean`, so you can replace any of them with your own implementation:
+
+```java
+@Bean
+public PayloadEncoder customPayloadEncoder() {
+    // Your custom encoding logic
+    return new MyCustomPayloadEncoder();
+}
+```
+
+Replaceable beans: `InstanceIdentifier`, `StreamMetricsAggregator`, `ReporterMetricsProvider`, `SystemMetricsCollector`, `PayloadEncoder`, `HeartbeatSender`.
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Instance Identity" icon="fingerprint" href="/reporter/instance-identity">
+    How hostname and environment are auto-detected.
+  </Card>
+  <Card title="Heartbeat & Metrics" icon="heart-pulse" href="/reporter/heartbeat">
+    What data the Reporter sends to the Console.
+  </Card>
+</CardGroup>

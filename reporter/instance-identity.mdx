@@ -1,0 +1,103 @@
+---
+title: "Instance Identity"
+description: "How the Reporter identifies your application instance and resolves deployment metadata."
+icon: "fingerprint"
+---
+
+Each application instance is identified by a **UUID** generated at startup, combined with human-readable deployment metadata. The Console uses the UUID internally and displays the metadata in the UI.
+
+## Identity Fields
+
+| Field | Source | Example |
+|-------|--------|---------|
+| `instanceId` | UUID v4, auto-generated at each startup | `550e8400-e29b-41d4-a716-446655440000` |
+| `hostname` | Auto-detected (see below) | `order-service-7d4b8c9f5-x2k9p` |
+| `environment` | Auto-detected (see below) | `production` |
+| `serviceName` | `spring.application.name` | `order-service` |
+| `version` | `spring.application.version` or `Implementation-Version` from manifest | `2.1.0` |
+
+<Note>
+  The `instanceId` changes on every restart. It is a technical key — users never see it. The Console displays `hostname` and `serviceName` instead.
+</Note>
+
+## Hostname Resolution
+
+The Reporter resolves the hostname using this priority order:
+
+| Priority | Source | Typical Use |
+|----------|--------|-------------|
+| 1 | `POD_NAME` environment variable | Kubernetes (set via Downward API) |
+| 2 | `HOSTNAME` environment variable | Docker, Linux |
+| 3 | `InetAddress.getLocalHost().getHostName()` | Fallback |
+| 4 | `unknown-<uuid-prefix>` | Last resort if all above fail |
+
+<Tip>
+  In Kubernetes, expose the pod name as an environment variable for clean hostnames in the Console:
+  ```yaml
+  env:
+    - name: POD_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+  ```
+</Tip>
+
+## Environment Resolution
+
+The environment is resolved automatically using this priority order:
+
+| Priority | Source | Example |
+|----------|--------|---------|
+| 1 | `flowwarden.reporter.environment` property | Explicit configuration — always wins |
+| 2 | `FLOWWARDEN_ENVIRONMENT` env var | |
+| 3 | `ENVIRONMENT` env var | |
+| 4 | `ENV` env var | |
+| 5 | Kubernetes namespace file | `/var/run/secrets/kubernetes.io/serviceaccount/namespace` |
+| 6 | First active Spring profile | `spring.profiles.active` |
+| 7 | `"default"` | Fallback |
+
+### Kubernetes Namespace Mapping
+
+When the environment is detected from a Kubernetes namespace, common patterns are mapped to standard names:
+
+| Namespace contains | Resolved as |
+|-------------------|-------------|
+| `prod` | `production` |
+| `staging` or `stag` | `staging` |
+| `dev` | `development` |
+| `test` | `test` |
+| anything else | namespace name as-is |
+
+## Overriding
+
+You can always set the environment explicitly in your configuration:
+
+```yaml
+flowwarden:
+  reporter:
+    environment: production
+```
+
+This takes the highest priority and skips all auto-detection.
+
+For full control over instance identification, replace the `InstanceIdentifier` bean:
+
+```java
+@Bean
+public InstanceIdentifier instanceIdentifier(Environment env,
+                                             FlowWardenReporterProperties props) {
+    // Your custom logic
+    return new InstanceIdentifier(env, props);
+}
+```
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/reporter/configuration">
+    All Reporter configuration properties including environment.
+  </Card>
+  <Card title="Heartbeat & Metrics" icon="heart-pulse" href="/reporter/heartbeat">
+    How identity data is included in each heartbeat.
+  </Card>
+</CardGroup>

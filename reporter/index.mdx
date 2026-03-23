@@ -1,0 +1,78 @@
+---
+title: "FlowWarden Reporter"
+description: "Connect your Change Streams to the FlowWarden Console for real-time monitoring, alerting, and remote control."
+icon: "satellite-dish"
+---
+
+FlowWarden Reporter is an open-source Spring Boot library that bridges [FlowWarden Stream Core](/quickstart) and the **FlowWarden Console**. Drop it onto your classpath and your application automatically starts reporting stream health, metrics, and checkpoint status to the Console — no code changes required.
+
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Your Application                                           │
+│                                                             │
+│  ┌──────────────────┐     ┌──────────────────────────────┐ │
+│  │  Stream Core     │────▶│  Reporter                    │ │
+│  │  @ChangeStream   │ SPI │  - Collects metrics          │ │
+│  │  @OnInsert ...   │     │  - Sends heartbeats (30s)    │ │
+│  └──────────────────┘     │  - Reports JVM health        │ │
+│                            └──────────────┬───────────────┘ │
+└───────────────────────────────────────────┼─────────────────┘
+                                            │ HTTPS POST
+                                            │ Protobuf
+                                            ▼
+                              ┌──────────────────────────┐
+                              │  FlowWarden Console      │
+                              │  - Dashboard             │
+                              │  - Alerts                │
+                              │  - Remote commands       │
+                              └──────────────────────────┘
+```
+
+## What Gets Reported
+
+Each heartbeat contains:
+
+| Data | Description |
+|------|-------------|
+| **Stream status** | Running, paused, error, stopped — per stream |
+| **Event counters** | Events processed, errors, DLQ size |
+| **Throughput** | Events/second, average processing time |
+| **Checkpoint info** | Last seen age, last processed age, events behind |
+| **JVM metrics** | Heap usage, CPU load, active threads |
+| **Deployment info** | Hostname, environment, service name, version |
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Zero-code integration" icon="wand-magic-sparkles">
+    Just add the dependency and configure two properties. The Reporter auto-configures via Spring Boot.
+  </Card>
+  <Card title="Lightweight" icon="feather">
+    No Micrometer, no Redis, no Caffeine. Uses only JDK built-in APIs and Protobuf for efficient wire format.
+  </Card>
+  <Card title="Resilient" icon="shield-halved">
+    Retries with exponential backoff. Graceful degradation if the Console is unreachable.
+  </Card>
+  <Card title="Dynamic interval" icon="clock">
+    The Console controls the heartbeat frequency via the ACK response — no restart needed.
+  </Card>
+</CardGroup>
+
+## Prerequisites
+
+- **FlowWarden Stream Core** on your classpath (the Reporter implements its `StreamMetricsProvider` SPI)
+- A **FlowWarden Console** account (SaaS or On-Premise) with an API key
+- **Java 17+** and **Spring Boot 3.2+**
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/reporter/quickstart">
+    Add the Reporter to your project in 5 minutes.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/reporter/configuration">
+    Full reference of all Reporter properties.
+  </Card>
+</CardGroup>
