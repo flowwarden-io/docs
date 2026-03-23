@@ -153,22 +153,45 @@ void onReplace(Order doc, ChangeStreamContext<Order> ctx) {
 
 ### Rules for Typed Handlers
 
-- At most **one** method per typed annotation per class (e.g. one `@OnInsert`, one `@OnUpdate`, etc.)
+- At most **one** method per typed annotation per class (e.g. you cannot have two `@OnInsert` methods)
 - If no typed handler matches the event, `@OnChange` is used as fallback (if present)
 - If neither a typed handler nor `@OnChange` matches, the event is silently skipped
 
-<Warning>
-  A method may only carry **one** typed handler annotation. Combining annotations like `@OnUpdate` and `@OnReplace` on the same method causes a `BeanCreationException` at startup.
+### Combining Annotations on the Same Method
+
+You can place **multiple typed annotations** on a single method to handle several operation types with the same logic:
+
+```java
+@OnInsert
+@OnUpdate
+void handleWriteOps(ChangeStreamContext<Order> ctx) {
+    // Called for both INSERT and UPDATE events
+    log.info("Write operation: {}", ctx.getOperationType());
+}
+```
+
+This is equivalent to `@OnChange(operationTypes = {INSERT, UPDATE})`, but uses the typed handler dispatch path (which takes priority over `@OnChange`).
+
+<Tip>
+  This is especially convenient when used with `@Filter`, since `@Filter` requires that all covered operation types have a `fullDocument`. Combining `@OnInsert` and `@OnUpdate` is safe — both have a full document available.
+</Tip>
+
+<Accordion title="Equivalence with @OnChange(operationTypes)">
+  These two approaches produce the same behavior:
 
   ```java
-  // DON'T — this fails at startup
+  // Approach 1: Multiple typed annotations
+  @OnInsert
   @OnUpdate
-  @OnReplace
+  void handle(ChangeStreamContext<Order> ctx) { ... }
+
+  // Approach 2: @OnChange with operationTypes filter
+  @OnChange(operationTypes = { OperationType.INSERT, OperationType.UPDATE })
   void handle(ChangeStreamContext<Order> ctx) { ... }
   ```
 
-  Instead, use separate methods for each operation type.
-</Warning>
+  The key difference: typed handlers have **higher dispatch priority** than `@OnChange`. If you also have a separate `@OnChange` fallback in the same class, the typed annotations will be resolved first.
+</Accordion>
 
 ## Supported Signatures
 
@@ -287,6 +310,33 @@ public class TypedOrderHandler {
 ```
 </CodeGroup>
 
+### Combined Annotations with @Filter
+
+From the `sample-spring-mvc` module — a handler that reacts to both INSERT and UPDATE with a client-side filter:
+
+```java
+@ChangeStream(documentType = Order.class)
+@Checkpoint
+public class OrderStreamWithFilter {
+
+    @OnInsert
+    @OnUpdate
+    void handleOrderChange(ChangeStreamContext<Order> ctx) {
+        System.out.println(ctx.summary());
+    }
+
+    @Filter
+    boolean filterOrder(ChangeStreamContext<Order> ctx) {
+        Optional<Order> doc = ctx.getFullDocument(Order.class);
+        return doc.isPresent() && doc.get().getStatus().equals("CONFIRMED");
+    }
+}
+```
+
+<Note>
+  This works because both INSERT and UPDATE events have a `fullDocument` available, which is required by `@Filter`. Combining `@OnInsert @OnDelete` with `@Filter` would fail at startup because DELETE events have no full document.
+</Note>
+
 ### Minimal — Single @OnChange
 
 The simplest form: one handler for all event types.
@@ -343,7 +393,7 @@ FlowWarden validates handler methods at startup. Here are the common errors:
 | "must have at least one handler method" | `@ChangeStream` class has no `@OnChange`, `@OnInsert`, etc. | Add at least one handler method. |
 | "must have exactly one @OnChange method" | Multiple `@OnChange` methods in the same class. | Keep only one `@OnChange`. |
 | "must have at most one @OnInsert method" | Duplicate typed handler for the same operation. | Keep only one per type. |
-| "carries both @OnUpdate and @OnReplace" | Method has multiple typed handler annotations. | Use one annotation per method — split into separate methods. |
+| "must have at most one @OnUpdate method, found 2" | Two different methods have the same typed annotation. | Keep only one method per annotation type. You can combine multiple annotations on a single method instead. |
 | "uses a document-typed signature but documentType is Document.class" | Handler uses `(T doc, ...)` but no concrete `documentType` is set. | Set `documentType = YourClass.class` on `@ChangeStream`. |
 | "has invalid signature" | Method parameters don't match any supported style. | Use one of the three supported signatures. |
 | "has unsupported return type" | Return type is not `void` or `Mono<Void>`. | Use `void` (imperative) or `Mono<Void>` (reactive). |
