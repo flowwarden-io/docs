@@ -52,6 +52,26 @@
         ]
       },
       {
+        "tab": "Reporter",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "reporter/index",
+              "reporter/quickstart"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reporter/configuration",
+              "reporter/heartbeat",
+              "reporter/instance-identity"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Reference",
         "groups": [
           {
