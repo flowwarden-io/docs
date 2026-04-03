@@ -25,10 +25,60 @@ For `DELETE` operations, the full document is not available and the method retur
 
 ### getFullDocumentBeforeChange
 
-Returns the document **before** the operation (requires MongoDB 6.0+ with [pre-image](https://www.mongodb.com/docs/manual/changeStreams/#change-streams-with-document-pre--and-post-images) enabled on the collection).
+Returns the document **before** the operation, automatically converted using Spring's `MongoConverter`. This is useful for comparing old vs. new state (e.g., audit logging, status transition tracking).
 
 ```java
-Optional<Order> before = ctx.getFullDocumentBeforeChange(Order.class);
+@OnUpdate
+void onStatusChange(ChangeStreamContext<Order> ctx) {
+    Optional<Order> before = ctx.getFullDocumentBeforeChange(Order.class);
+    Optional<Order> after = ctx.getFullDocument(Order.class);
+
+    if (before.isPresent() && after.isPresent()) {
+        log.info("Order {} status: {} → {}",
+            after.get().getId(),
+            before.get().getStatus(),
+            after.get().getStatus());
+    }
+}
+```
+
+<Warning>
+  **Two prerequisites are required for pre-images to work:**
+
+  1. **MongoDB 6.0+** — pre-images are not available on earlier versions.
+  2. **Pre-images must be enabled on the collection** — MongoDB does not store pre-images by default. Run this command once per collection:
+
+  ```javascript
+  db.runCommand({
+    collMod: "orders",
+    changeStreamPreAndPostImages: { enabled: true }
+  })
+  ```
+
+  Or in Java with Spring's `MongoTemplate`:
+
+  ```java
+  mongoTemplate.getDb().runCommand(
+      new Document("collMod", "orders")
+          .append("changeStreamPreAndPostImages", new Document("enabled", true))
+  );
+  ```
+</Warning>
+
+The `@ChangeStream` annotation controls how pre-images are requested:
+
+| `fullDocumentBeforeChange` | Behavior if pre-images are **not enabled** on collection |
+|---|---|
+| `OFF` (default) | No pre-image requested. `getFullDocumentBeforeChange()` always returns `Optional.empty()`. |
+| `WHEN_AVAILABLE` | Returns `Optional.empty()` silently. Safe for optional use cases. |
+| `REQUIRED` | MongoDB returns an error and the event processing fails. Use when pre-images are mandatory. |
+
+```java
+@ChangeStream(
+    documentType = Order.class,
+    fullDocumentBeforeChange = FullDocumentBeforeChangeMode.WHEN_AVAILABLE
+)
+public class OrderAuditHandler { ... }
 ```
 
 ### getUpdateDescription

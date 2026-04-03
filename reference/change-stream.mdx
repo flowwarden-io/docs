@@ -42,6 +42,43 @@ public class OrderHandler {
 | `database`     | `String`   | `""`             | Target database. Defaults to the Spring-configured database.                                    |
 | `documentType` | `Class<?>` | `Document.class` | Java type for deserialization. Also used to infer `collection` via `@Document` if not specified. |
 
+### Document Options
+
+| Attribute                    | Type                            | Default           | Description                                                                                       |
+|------------------------------|---------------------------------|-------------------|---------------------------------------------------------------------------------------------------|
+| `fullDocument`               | `FullDocumentMode`              | `DEFAULT`         | Controls inclusion of the full document in change events. See [values](#fulldocumentmode-values) below. |
+| `fullDocumentBeforeChange`   | `FullDocumentBeforeChangeMode`  | `OFF`             | Controls pre-image inclusion (MongoDB 6.0+). See [values](#fulldocumentbeforechangemode-values) below. |
+
+#### FullDocumentMode values
+
+| Value            | Description                                                                                     |
+|------------------|-------------------------------------------------------------------------------------------------|
+| `DEFAULT`        | Server default. INSERT and REPLACE include the document; UPDATE only includes the change delta.  |
+| `UPDATE_LOOKUP`  | MongoDB looks up the current document for UPDATE events. **Required when using `@Filter` with `@OnUpdate`.** |
+| `WHEN_AVAILABLE` | Include full document when available, `null` otherwise (MongoDB 6.0+).                          |
+| `REQUIRED`       | Require full document — error if not available (MongoDB 6.0+).                                  |
+
+#### FullDocumentBeforeChangeMode values
+
+| Value            | Description                                                                                     |
+|------------------|-------------------------------------------------------------------------------------------------|
+| `OFF`            | Disabled (default). No pre-image is requested.                                                  |
+| `WHEN_AVAILABLE` | Include the document before the change when available. Returns `Optional.empty()` if not enabled on the collection. |
+| `REQUIRED`       | Require the pre-image — throws an error if the collection does not have pre-images enabled.     |
+
+<Warning>
+  Pre-images (`fullDocumentBeforeChange`) require MongoDB 6.0+ **and** that pre-images are explicitly enabled on the target collection:
+
+  ```javascript
+  db.runCommand({
+    collMod: "orders",
+    changeStreamPreAndPostImages: { enabled: true }
+  })
+  ```
+
+  See the [MongoDB documentation](https://www.mongodb.com/docs/manual/changeStreams/#change-streams-with-document-pre--and-post-images) for details. Without this, `WHEN_AVAILABLE` returns empty and `REQUIRED` throws an error.
+</Warning>
+
 ### Behaviour
 
 | Attribute          | Type      | Default | Description                                           |
@@ -217,6 +254,31 @@ public class OrderHandler {
     void handle(ChangeStreamContext<?> ctx) {
         System.out.printf("Event %s on %s%n",
             ctx.getOperationType(), ctx.getCollectionName());
+    }
+}
+```
+
+### With Pre-Image (Before/After Comparison)
+
+```java
+@ChangeStream(
+    documentType = Order.class,
+    fullDocument = FullDocumentMode.UPDATE_LOOKUP,
+    fullDocumentBeforeChange = FullDocumentBeforeChangeMode.WHEN_AVAILABLE
+)
+public class OrderAuditHandler {
+
+    @OnUpdate
+    void onStatusChange(ChangeStreamContext<Order> ctx) {
+        Optional<Order> before = ctx.getFullDocumentBeforeChange(Order.class);
+        Optional<Order> after = ctx.getFullDocument(Order.class);
+
+        if (before.isPresent() && after.isPresent()) {
+            log.info("Order {} status: {} → {}",
+                after.get().getId(),
+                before.get().getStatus(),
+                after.get().getStatus());
+        }
     }
 }
 ```

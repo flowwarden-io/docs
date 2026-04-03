@@ -4,28 +4,38 @@ description: "Complete reference of all FlowWarden Reporter configuration proper
 icon: "gear"
 ---
 
+## Operating Modes
+
+The Reporter supports two modes that can run simultaneously. Configuration requirements depend on which mode(s) you use.
+
+| Mode | Required properties | Optional dependency |
+|------|-------------------|-------------------|
+| **Console** | `flowwarden.api-key` + `flowwarden.reporter.console-url` | — |
+| **Prometheus** | None | `micrometer-core` on classpath |
+| **Both** | `flowwarden.api-key` + `flowwarden.reporter.console-url` | `micrometer-core` on classpath |
+
 ## Properties
 
-### Required
+### Console mode
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `flowwarden.api-key` | `String` | — | API key for authenticating with the FlowWarden Console. **Required** when reporter is enabled. |
-| `flowwarden.reporter.console-url` | `String` | — | URL of the FlowWarden Console (e.g. `https://console.flowwarden.io`). **Required** when reporter is enabled. |
+| `flowwarden.api-key` | `String` | — | API key for authenticating with the FlowWarden Console. **Required only when `console-url` is configured.** |
+| `flowwarden.reporter.console-url` | `String` | — | URL of the FlowWarden Console (e.g. `https://console.flowwarden.io`). Triggers Console mode when present. |
 
-### Optional
+### General
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `flowwarden.reporter.enabled` | `boolean` | `true` | Enable or disable the Reporter. When `false`, no Reporter beans are created. |
+| `flowwarden.reporter.enabled` | `boolean` | `true` | Enable or disable the Reporter entirely. When `false`, no Reporter beans are created. |
 | `flowwarden.reporter.environment` | `String` | auto-detected | Logical environment name (e.g. `production`, `staging`). If not set, resolved automatically (see [Instance Identity](/reporter/instance-identity)). |
 | `flowwarden.reporter.heartbeat-interval-seconds` | `int` | `30` | Initial heartbeat interval in seconds. Dynamically adjusted by the Console via the `next_heartbeat_in` field in the ACK response. |
 | `flowwarden.reporter.encryption.enabled` | `boolean` | `true` | Enable AES-GCM encryption of payloads sent to the Console. |
 
-## Example Configuration
+## Example Configurations
 
 <Tabs>
-  <Tab title="application.yml">
+  <Tab title="Console only">
     ```yaml
     flowwarden:
       api-key: ${FLOWWARDEN_API_KEY}
@@ -33,25 +43,49 @@ icon: "gear"
       reporter:
         console-url: https://console.flowwarden.io
         environment: production
-        heartbeat-interval-seconds: 30
-        encryption:
-          enabled: true
     ```
   </Tab>
-  <Tab title="application.properties">
-    ```properties
-    flowwarden.api-key=${FLOWWARDEN_API_KEY}
-    flowwarden.reporter.console-url=https://console.flowwarden.io
-    flowwarden.reporter.environment=production
-    flowwarden.reporter.heartbeat-interval-seconds=30
-    flowwarden.reporter.encryption.enabled=true
+  <Tab title="Prometheus only">
+    ```yaml
+    # No FlowWarden-specific config needed.
+    # Just have micrometer + actuator on the classpath.
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: prometheus
+    ```
+  </Tab>
+  <Tab title="Dual mode">
+    ```yaml
+    flowwarden:
+      api-key: ${FLOWWARDEN_API_KEY}
+
+      reporter:
+        console-url: https://console.flowwarden.io
+        environment: production
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: prometheus
     ```
   </Tab>
 </Tabs>
 
-## Fail-Fast Validation
+## Validation Rules
 
-The Reporter validates its configuration at startup. If required properties are missing, the application **fails to start** with a clear error message:
+The Reporter validates its configuration at startup based on what is configured:
+
+| Condition | Behavior |
+|-----------|----------|
+| `console-url` present + `api-key` missing | **Application fails to start** with a clear error (see below) |
+| `api-key` present + `console-url` missing | **Warning logged**: Console mode disabled. App starts normally. |
+| No `console-url` + no `MeterRegistry` on classpath | **Warning logged**: No output configured. App starts in NoOp mode. |
+| `MeterRegistry` on classpath (regardless of above) | **Prometheus mode activated** automatically. |
+
+### Fail-fast error (Console mode misconfigured)
 
 ```
 ***************************
@@ -60,29 +94,15 @@ APPLICATION FAILED TO START
 
 Description:
 
-FlowWarden Reporter is enabled but 'flowwarden.api-key' is not set.
+FlowWarden Reporter Console mode requires 'flowwarden.api-key'
+when 'flowwarden.reporter.console-url' is configured.
 
 Action:
 
 Either:
 1. Set 'flowwarden.api-key' in your application properties or environment variables
-2. Disable the reporter with 'flowwarden.reporter.enabled=false'
-```
-
-```
-***************************
-APPLICATION FAILED TO START
-***************************
-
-Description:
-
-FlowWarden Reporter is enabled but 'flowwarden.reporter.console-url' is not set.
-
-Action:
-
-Either:
-1. Set 'flowwarden.reporter.console-url' to the URL of your FlowWarden Console
-2. Disable the reporter with 'flowwarden.reporter.enabled=false'
+2. Remove 'flowwarden.reporter.console-url' to use local Prometheus mode only
+3. Disable the reporter with 'flowwarden.reporter.enabled=false'
 ```
 
 <Tip>
@@ -93,12 +113,24 @@ Either:
   ```
 </Tip>
 
+## Prometheus Metrics
+
+When a `MeterRegistry` is available, the Reporter registers these Micrometer meters:
+
+| Metric | Type | Tags | Description |
+|--------|------|------|-------------|
+| `flowwarden_stream_events_total` | FunctionCounter | `stream`, `status` | Total events processed (monotonic) |
+| `flowwarden_stream_lag_ms` | Gauge | `stream` | Current consumer lag in milliseconds |
+| `flowwarden_stream_dlq_size` | Gauge | `stream` | DLQ events in the current window |
+
+Naming follows [Prometheus conventions](https://prometheus.io/docs/practices/naming/) (snake_case, underscores).
+
 ## Disabling the Reporter
 
 Set `flowwarden.reporter.enabled=false` to completely disable the Reporter. No beans are created, no heartbeats are sent, and the `StreamMetricsProvider` SPI remains at its default no-op implementation.
 
 This is useful for:
-- Local development without a Console
+- Local development without a Console or Prometheus
 - Test environments where monitoring is not needed
 - Temporarily disabling reporting without removing the dependency
 
@@ -114,7 +146,7 @@ public PayloadEncoder customPayloadEncoder() {
 }
 ```
 
-Replaceable beans: `InstanceIdentifier`, `StreamMetricsAggregator`, `ReporterMetricsProvider`, `SystemMetricsCollector`, `PayloadEncoder`, `HeartbeatSender`.
+Replaceable beans: `InstanceIdentifier`, `StreamMetricsAggregator`, `ReporterMetricsProvider`, `SystemMetricsCollector`, `PayloadEncoder`, `HeartbeatSender`, `FlowWardenMicrometerReporter`.
 
 ## See Also
 

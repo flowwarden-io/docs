@@ -84,7 +84,8 @@
               "reference/filter",
               "reference/checkpoint",
               "reference/retry-policy",
-              "reference/dead-letter-queue"
+              "reference/dead-letter-queue",
+              "reference/on-error"
             ]
           },
           {

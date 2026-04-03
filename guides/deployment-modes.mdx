@@ -1,9 +1,177 @@
 ---
 title: "Deployment Modes"
-description: "Multi-instance deployment strategies for FlowWarden"
+description: "Control how multiple application instances coordinate when watching the same MongoDB collection"
 icon: "server"
 ---
 
+When you scale your Spring Boot application to multiple instances, each instance will start its own Change Stream by default. FlowWarden provides **deployment modes** to control this behavior.
+
+## Available Modes
+
+| Mode | Coordination | Events per Instance | Use Case |
+|------|-------------|---------------------|----------|
+| `ALL_INSTANCES` | None | All events | Cache invalidation, local state, projections |
+| `SINGLE_LEADER` | MongoDB lock | All events (leader only) | Order processing, billing, unique side effects |
+| `PARTITIONED` | Hash-based | Subset by partition key | *Not yet implemented* |
+
+## ALL_INSTANCES (Default)
+
+Every instance processes every event independently. No coordination between instances.
+
+```java
+@ChangeStream(
+    collection = "products",
+    deploymentMode = DeploymentMode.ALL_INSTANCES  // this is the default
+)
+public class CacheInvalidationHandler {
+
+    @OnUpdate
+    void onProductUpdated(Product product, ChangeStreamContext<Product> ctx) {
+        localCache.evict(product.getId());
+    }
+}
+```
+
+<Warning>
+  Handlers in `ALL_INSTANCES` mode **must be idempotent** — every instance receives every event.
+  Do not use this mode for side effects that must happen exactly once (emails, payments, etc.).
+</Warning>
+
+### When to use
+
+- Local cache invalidation
+- In-memory state refresh
+- WebSocket push notifications (each server notifies its own clients)
+- Read-model / CQRS projections where each instance maintains its own view
+
+## SINGLE_LEADER
+
+Only one instance (the **leader**) processes events. Other instances are on **standby** and automatically take over if the leader fails.
+
+```java
+@ChangeStream(
+    collection = "orders",
+    deploymentMode = DeploymentMode.SINGLE_LEADER
+)
+@Checkpoint(flushInterval = "5s")
+@RetryPolicy(maxAttempts = 5, initialDelay = "500ms")
+@DeadLetterQueue(collection = "orders_dlq")
+public class OrderStreamHandler {
+
+    @OnInsert
+    void onNewOrder(Order order, ChangeStreamContext<Order> ctx) {
+        billingService.charge(order);
+        notificationService.sendConfirmation(order);
+    }
+}
+```
+
+### How it works
+
+<Steps>
+  <Step title="Leader election">
+    On startup, each instance attempts to acquire a lock in the `_fw_locks` MongoDB collection using an atomic `findOneAndUpdate`. The first instance to succeed becomes the **leader**.
+  </Step>
+  <Step title="Heartbeat">
+    The leader renews its lock every **15 seconds**. The lock has a **60-second TTL**.
+  </Step>
+  <Step title="Standby polling">
+    Standby instances poll every **20 seconds** to check if the lock has expired.
+  </Step>
+  <Step title="Failover">
+    If the leader crashes or loses connectivity, it stops renewing the lock. After the TTL expires, a standby instance acquires the lock and starts the stream — resuming from the last checkpoint.
+  </Step>
+  <Step title="Graceful shutdown">
+    On application shutdown (`@PreDestroy`), the leader releases the lock immediately so a standby can take over without waiting for TTL expiry.
+  </Step>
+</Steps>
+
+### Lock document
+
+FlowWarden stores one document per stream in the `_fw_locks` collection:
+
+```json
+{
+  "_id": "order-stream",
+  "instanceId": "pod-order-svc-abc:order-service:8080",
+  "acquiredAt": "2026-04-03T12:00:00Z",
+  "expiresAt": "2026-04-03T12:01:00Z"
+}
+```
+
 <Note>
-  Multi-instance deployment modes are not yet implemented. This feature is planned for a future release.
+  The `_fw_locks` collection is created automatically. No migration or manual setup required.
 </Note>
+
+### Timing parameters
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| Lock TTL | 60s | Time before an unrenewed lock expires |
+| Heartbeat interval | 15s | How often the leader renews its lock |
+| Standby poll interval | 20s | How often standby instances check for an expired lock |
+| Max failover time | ~80s | Worst case: lock just renewed (60s TTL) + poll interval (20s) |
+
+### When to use
+
+- Order processing, billing, payment webhooks
+- Email/SMS notifications that must not be duplicated
+- Any handler with non-idempotent side effects
+- Event-sourced systems where ordering matters globally
+
+<Tip>
+  Always pair `SINGLE_LEADER` with `@Checkpoint` so the new leader can resume from where the old leader left off.
+</Tip>
+
+## Mixed modes
+
+Different streams in the same application can use different deployment modes:
+
+```java
+// This stream needs exactly-once processing
+@ChangeStream(collection = "orders", deploymentMode = DeploymentMode.SINGLE_LEADER)
+@Checkpoint(flushInterval = "5s")
+public class OrderHandler {
+    @OnInsert
+    void handle(Order order) { /* billing, notifications */ }
+}
+
+// This stream is fine with all instances processing
+@ChangeStream(collection = "products", deploymentMode = DeploymentMode.ALL_INSTANCES)
+public class CacheHandler {
+    @OnUpdate
+    void handle(Product product) { /* local cache eviction */ }
+}
+```
+
+Each `SINGLE_LEADER` stream has its **own independent lock** — different streams can have different leaders across your cluster.
+
+## Monitoring
+
+When using FlowWarden Console, the stream detail page shows:
+
+- **Deployment mode** badge (`SINGLE LEADER` or `ALL INSTANCES`)
+- **Leader role** badge per instance (`LEADER` / `STANDBY`)
+- Instance status cards with role information
+
+The leader election events are also reported via the `StreamMetricsProvider` SPI, so they appear in heartbeat data sent to the Console.
+
+## Comparison
+
+| Aspect | ALL_INSTANCES | SINGLE_LEADER |
+|--------|--------------|---------------|
+| **Duplicates** | Yes (all instances) | No (leader only) |
+| **Global ordering** | No | Yes |
+| **Failover delay** | None (all always active) | ~20-80s |
+| **MongoDB overhead** | N change streams | 1 change stream + lock heartbeat |
+| **Idempotency required** | Yes | No |
+| **Coordination** | None | `_fw_locks` collection |
+
+<CardGroup cols={2}>
+  <Card title="Checkpoint & Resume" icon="bookmark" href="/guides/checkpoint-resume">
+    Ensure the new leader resumes from the correct position after failover.
+  </Card>
+  <Card title="Retry & DLQ" icon="rotate" href="/guides/retry-and-dlq">
+    Handle failures gracefully with automatic retries and dead letter queues.
+  </Card>
+</CardGroup>

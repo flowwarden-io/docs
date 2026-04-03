@@ -24,29 +24,92 @@ implementation 'io.flowwarden:flowwarden-reporter:1.0.0-MVP-SNAPSHOT'
   The Reporter is currently published to GitHub Packages (private). See the [GitHub Packages setup guide](https://github.com/flowwarden-io/flowwarden-reporter) for Maven repository configuration.
 </Note>
 
-## 2. Configure your application
+## 2. Choose your mode
 
-Add the required properties to your `application.yml`:
+<Tabs>
+  <Tab title="Console mode">
+    Send metrics to the FlowWarden Console dashboard.
 
-```yaml
-flowwarden:
-  api-key: your-api-key-here
+    ```yaml
+    flowwarden:
+      api-key: ${FLOWWARDEN_API_KEY}
 
-  reporter:
-    console-url: https://console.flowwarden.io
-```
+      reporter:
+        console-url: https://console.flowwarden.io
+    ```
+  </Tab>
+  <Tab title="Prometheus mode">
+    Expose Micrometer metrics for Prometheus scraping. No API key needed.
 
-That's it. The Reporter auto-configures when it detects Stream Core on the classpath.
+    Add `spring-boot-starter-actuator` and a Micrometer registry to your dependencies:
+
+    ```xml
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+    ```
+
+    ```yaml
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: prometheus
+    ```
+
+    No FlowWarden-specific configuration required. Metrics are available at `/actuator/prometheus`.
+  </Tab>
+  <Tab title="Both">
+    Run Console and Prometheus modes simultaneously.
+
+    ```xml
+    <!-- In addition to flowwarden-reporter -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+    ```
+
+    ```yaml
+    flowwarden:
+      api-key: ${FLOWWARDEN_API_KEY}
+
+      reporter:
+        console-url: https://console.flowwarden.io
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: prometheus
+    ```
+  </Tab>
+</Tabs>
 
 ## 3. Verify
 
-Start your application. You should see this log line:
+Start your application. Depending on the mode, you should see:
 
+**Console mode:**
 ```
+INFO  i.f.r.a.FlowWardenReporterConfigurationValidator : FlowWarden Reporter Console mode activated (https://console.flowwarden.io)
 INFO  i.f.r.h.HeartbeatSender : HeartbeatSender started (interval=30s, endpoint=https://console.flowwarden.io/api/heartbeat)
 ```
 
-Every 30 seconds, the Reporter sends a heartbeat with your stream metrics to the Console.
+**Prometheus mode:**
+```
+INFO  i.f.r.a.FlowWardenReporterConfigurationValidator : FlowWarden Reporter Local/Prometheus mode activated (MeterRegistry detected)
+INFO  i.f.r.m.FlowWardenMicrometerReporter : FlowWardenMicrometerReporter started (pollInterval=30s)
+```
 
 <Tip>
   Enable debug logging to see each heartbeat:
@@ -71,10 +134,13 @@ No Reporter beans are created — zero overhead.
 
 ## What happens at startup
 
-1. **Validation** — checks that `flowwarden.api-key` and `flowwarden.reporter.console-url` are set. If missing, the application fails to start with a clear error message.
+1. **Validation** — checks configuration based on what's available:
+   - Console URL + no API key → **fails to start** with a clear error message
+   - API key + no Console URL → **warning** (Console mode disabled)
+   - No Console URL + no MeterRegistry → **warning** (NoOp mode)
 2. **Instance identification** — resolves hostname, environment, service name, and version automatically.
 3. **Metrics collection** — registers as the `StreamMetricsProvider` for Stream Core via the SPI.
-4. **Heartbeat loop** — starts a background thread that sends heartbeats to the Console every 30 seconds (adjustable by the Console).
+4. **Output activation** — starts heartbeat loop (Console) and/or registers Micrometer meters (Prometheus).
 
 ## Minimal complete example
 

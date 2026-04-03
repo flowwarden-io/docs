@@ -1,56 +1,68 @@
 ---
 title: "FlowWarden Reporter"
-description: "Connect your Change Streams to the FlowWarden Console for real-time monitoring, alerting, and remote control."
+description: "Connect your Change Streams to the FlowWarden Console for real-time monitoring — or expose Prometheus metrics locally. No code changes required."
 icon: "satellite-dish"
 ---
 
-FlowWarden Reporter is an open-source Spring Boot library that bridges [FlowWarden Stream Core](/quickstart) and the **FlowWarden Console**. Drop it onto your classpath and your application automatically starts reporting stream health, metrics, and checkpoint status to the Console — no code changes required.
+FlowWarden Reporter is an open-source Spring Boot library that bridges [FlowWarden Stream Core](/quickstart) and the **FlowWarden Console**. Drop it onto your classpath and your application automatically starts reporting stream health, metrics, and checkpoint status — no code changes required.
 
-## How It Works
+## Two Modes of Operation
+
+The Reporter supports two independent modes that can run simultaneously:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Your Application                                           │
-│                                                             │
-│  ┌──────────────────┐     ┌──────────────────────────────┐ │
-│  │  Stream Core     │────▶│  Reporter                    │ │
-│  │  @ChangeStream   │ SPI │  - Collects metrics          │ │
-│  │  @OnInsert ...   │     │  - Sends heartbeats (30s)    │ │
-│  └──────────────────┘     │  - Reports JVM health        │ │
-│                            └──────────────┬───────────────┘ │
-└───────────────────────────────────────────┼─────────────────┘
-                                            │ HTTPS POST
-                                            │ Protobuf
-                                            ▼
-                              ┌──────────────────────────┐
-                              │  FlowWarden Console      │
-                              │  - Dashboard             │
-                              │  - Alerts                │
-                              │  - Remote commands       │
-                              └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  Your Application                                               │
+│                                                                 │
+│  ┌──────────────────┐     ┌──────────────────────────────────┐ │
+│  │  Stream Core     │────▶│  Reporter                        │ │
+│  │  @ChangeStream   │ SPI │  - Collects metrics              │ │
+│  │  @OnInsert ...   │     │  - Aggregates per-stream stats   │ │
+│  └──────────────────┘     └───────────┬──────────┬───────────┘ │
+└───────────────────────────────────────┼──────────┼─────────────┘
+                                        │          │
+             ┌──────────────────────────┘          └───────────────┐
+             │ HTTPS POST (Protobuf)                               │ Micrometer
+             ▼                                                     ▼
+┌──────────────────────────┐                     ┌──────────────────────────┐
+│  FlowWarden Console      │                     │  Prometheus / Grafana    │
+│  - Dashboard             │                     │  /actuator/prometheus    │
+│  - Alerts                │                     │                          │
+│  - Remote commands       │                     │                          │
+└──────────────────────────┘                     └──────────────────────────┘
 ```
+
+| Mode | Activation | Prerequisites |
+|------|-----------|---------------|
+| **Console** | `flowwarden.api-key` + `flowwarden.reporter.console-url` configured | FlowWarden Console account |
+| **Local / Prometheus** | Automatic when `MeterRegistry` is on the classpath | `spring-boot-starter-actuator` + `micrometer-registry-prometheus` |
+
+Both modes share the same `StreamMetricsAggregator` — no duplicate collection.
 
 ## What Gets Reported
 
-Each heartbeat contains:
+Each heartbeat (Console mode) or scrape (Prometheus mode) contains:
 
-| Data | Description |
-|------|-------------|
-| **Stream status** | Running, paused, error, stopped — per stream |
-| **Event counters** | Events processed, errors, DLQ size |
-| **Throughput** | Events/second, average processing time |
-| **Checkpoint info** | Last seen age, last processed age, events behind |
-| **JVM metrics** | Heap usage, CPU load, active threads |
-| **Deployment info** | Hostname, environment, service name, version |
+| Data | Console | Prometheus |
+|------|---------|------------|
+| **Stream status** (running, paused, error, stopped) | ✅ | — |
+| **Event counters** (processed, errors, DLQ) | ✅ | ✅ `flowwarden_stream_events_total` |
+| **Consumer lag** (ms) | ✅ | ✅ `flowwarden_stream_lag_ms` |
+| **DLQ size** | ✅ | ✅ `flowwarden_stream_dlq_size` |
+| **Throughput** (events/sec) | ✅ | ✅ `flowwarden_stream_events_per_second` |
+| **Checkpoint info** (last seen age, events behind) | ✅ | — |
+| **JVM metrics** (heap, CPU, threads) | ✅ | — |
+| **Error details** (type, message, stack trace) | ✅ | — |
+| **Deployment info** (hostname, version, env) | ✅ | — |
 
 ## Key Features
 
 <CardGroup cols={2}>
   <Card title="Zero-code integration" icon="wand-magic-sparkles">
-    Just add the dependency and configure two properties. The Reporter auto-configures via Spring Boot.
+    Just add the dependency. The Reporter auto-configures via Spring Boot.
   </Card>
-  <Card title="Lightweight" icon="feather">
-    No Micrometer, no Redis, no Caffeine. Uses only JDK built-in APIs and Protobuf for efficient wire format.
+  <Card title="Dual mode" icon="code-branch">
+    Console mode, Prometheus mode, or both simultaneously. Use what fits your stack.
   </Card>
   <Card title="Resilient" icon="shield-halved">
     Retries with exponential backoff. Graceful degradation if the Console is unreachable.
@@ -63,8 +75,9 @@ Each heartbeat contains:
 ## Prerequisites
 
 - **FlowWarden Stream Core** on your classpath (the Reporter implements its `StreamMetricsProvider` SPI)
-- A **FlowWarden Console** account (SaaS or On-Premise) with an API key
 - **Java 17+** and **Spring Boot 3.2+**
+- For Console mode: a **FlowWarden Console** account with an API key
+- For Prometheus mode: `spring-boot-starter-actuator` + `micrometer-registry-prometheus` on the classpath
 
 ## Next Steps
 
