@@ -142,16 +142,44 @@ curl -X POST http://localhost:8080/actuator/flowwarden/order-stream/stop
 }
 ```
 
-<Warning>
-  Only `stop` is available via the Actuator endpoint. For `start`, `restart`, `pause`, `resume`, and other lifecycle actions, use the **FlowWarden Console**. This ensures operational traceability and audit logging.
-</Warning>
+#### Start a stream
 
-Attempting any action other than `stop` returns an error:
+```bash
+curl -X POST http://localhost:8080/actuator/flowwarden/order-stream/start
+```
 
 ```json
 {
   "stream": "order-stream",
-  "error": "Only 'stop' is available locally. For 'start', 'restart', and other actions, use the FlowWarden Console."
+  "action": "started",
+  "running": true
+}
+```
+
+#### Restart a stream
+
+```bash
+curl -X POST http://localhost:8080/actuator/flowwarden/order-stream/restart
+```
+
+```json
+{
+  "stream": "order-stream",
+  "action": "restarted",
+  "running": true
+}
+```
+
+<Warning>
+  Lifecycle actions take effect immediately. Use with caution in production — stopping a stream means events will be queued in MongoDB until the stream is restarted. Checkpoint ensures no events are lost on restart.
+</Warning>
+
+Attempting an unsupported action returns an error:
+
+```json
+{
+  "stream": "order-stream",
+  "error": "Unsupported action 'pause'. Available actions: stop, start, restart."
 }
 ```
 
