@@ -291,9 +291,10 @@ spec:
 ## Best Practices
 
 - **Expose only what you need** — limit `management.endpoints.web.exposure.include` to `health,flowwarden` in production
-- **Secure endpoints** — use Spring Security to restrict access to management endpoints
+- **Secure endpoints** — use Spring Security to restrict access to management endpoints, especially lifecycle actions (`stop`, `start`, `restart`)
 - **Use `healthy` for probes** — the `healthy` field in the FlowWarden endpoint is a single boolean suitable for automated checks
-- **Emergency stop only** — the `stop` action is for emergency situations; use the FlowWarden Console for routine lifecycle management
+- **Monitor `lastEventTime`** — a `null` or stale `lastEventTime` can indicate that no events are being received, even if the stream is `UP`
+- **Prefer `restart` over stop + start** — the `restart` action is atomic and ensures the stream is properly recycled
 
 ## See Also
 
