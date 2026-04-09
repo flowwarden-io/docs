@@ -81,37 +81,58 @@ FlowWarden exposes a dedicated endpoint at `/actuator/flowwarden`.
 
 ### GET /actuator/flowwarden
 
-Returns the status of all registered streams:
+Returns the status of all registered streams with detailed information per stream:
 
 ```json
 {
   "streams": {
-    "order-stream": "UP",
-    "analytics-stream": "UP",
-    "legacy-stream": "DOWN"
+    "order-stream": {
+      "status": "UP",
+      "mode": "SINGLE_LEADER",
+      "lastEventTime": "2024-01-15T10:35:45.123Z"
+    },
+    "analytics-stream": {
+      "status": "UP",
+      "mode": "ALL_INSTANCES",
+      "lastEventTime": null
+    },
+    "legacy-stream": {
+      "status": "DOWN",
+      "mode": "SINGLE_LEADER",
+      "lastEventTime": "2024-01-15T09:12:03.456Z"
+    }
   },
-  "healthy": true
+  "healthy": false
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `streams` | `Map<String, String>` | Each stream name mapped to `"UP"` or `"DOWN"` |
+| `streams` | `Map<String, Object>` | Each stream name mapped to its status object |
+| `streams.*.status` | `String` | `"UP"` if the stream is running, `"DOWN"` otherwise |
+| `streams.*.mode` | `String` | Deployment mode: `ALL_INSTANCES`, `SINGLE_LEADER`, or `PARTITIONED` |
+| `streams.*.lastEventTime` | `String?` | ISO-8601 timestamp of the last processed event, or `null` if no event has been received yet |
 | `healthy` | `boolean` | `true` if all enabled + autoStart streams are running |
 
 <Tip>
   Use the `healthy` field for Kubernetes readiness probes or load balancer health checks.
 </Tip>
 
-### POST /actuator/flowwarden/\{streamName\}/stop
+### Lifecycle Actions
 
-Stops a specific stream (emergency action):
+FlowWarden provides three lifecycle actions via POST requests:
+
+| Endpoint | Action | Description |
+|----------|--------|-------------|
+| `POST /actuator/flowwarden/{streamName}/stop` | `stopped` | Stops a running stream |
+| `POST /actuator/flowwarden/{streamName}/start` | `started` | Starts a stopped stream |
+| `POST /actuator/flowwarden/{streamName}/restart` | `restarted` | Stops and restarts a stream |
+
+#### Stop a stream
 
 ```bash
 curl -X POST http://localhost:8080/actuator/flowwarden/order-stream/stop
 ```
-
-Response:
 
 ```json
 {
