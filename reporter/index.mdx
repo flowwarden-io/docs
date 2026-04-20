@@ -10,26 +10,13 @@ FlowWarden Reporter is an open-source Spring Boot library that bridges [FlowWard
 
 The Reporter supports two independent modes that can run simultaneously:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Your Application                                               │
-│                                                                 │
-│  ┌──────────────────┐     ┌──────────────────────────────────┐ │
-│  │  Stream Core     │────▶│  Reporter                        │ │
-│  │  @ChangeStream   │ SPI │  - Collects metrics              │ │
-│  │  @OnInsert ...   │     │  - Aggregates per-stream stats   │ │
-│  └──────────────────┘     └───────────┬──────────┬───────────┘ │
-└───────────────────────────────────────┼──────────┼─────────────┘
-                                        │          │
-             ┌──────────────────────────┘          └───────────────┐
-             │ HTTPS POST (Protobuf)                               │ Micrometer
-             ▼                                                     ▼
-┌──────────────────────────┐                     ┌──────────────────────────┐
-│  FlowWarden Console      │                     │  Prometheus / Grafana    │
-│  - Dashboard             │                     │  /actuator/prometheus    │
-│  - Alerts                │                     │                          │
-│  - Remote commands       │                     │                          │
-└──────────────────────────┘                     └──────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph app["Your Application"]
+        core["Stream Core\n@ChangeStream\n@OnInsert ..."] -->|SPI| reporter["Reporter\nCollects metrics\nAggregates per-stream stats"]
+    end
+    reporter -->|HTTPS POST\nProtobuf| console["FlowWarden Console\nDashboard, Alerts\nRemote commands"]
+    reporter -->|Micrometer| prom["Prometheus / Grafana\n/actuator/prometheus"]
 ```
 
 | Mode | Activation | Prerequisites |
