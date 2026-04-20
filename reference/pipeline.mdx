@@ -75,13 +75,13 @@ List<AggregationOperation> pipeline() {
 
 `@Pipeline` can coexist with [`@Filter`](/reference/filter) on the same `@ChangeStream`, forming a **double funnel** — pre-filter server-side, then refine with Java logic:
 
-```
-Oplog complet
-  └─► Change Stream sur la collection ciblée    ← filtre implicite MongoDB
-        └─► @Pipeline (server-side)              ← réduit le trafic réseau
-              └─► FlowWarden reçoit les events matchés
-                    └─► @Filter (application-side) ← logique Java complexe
-                          └─► Handler reçoit les events finaux
+```mermaid
+flowchart TD
+    A[("Full Oplog")] -->|"implicit collection filter"| B["Change Stream on target collection"]
+    B -->|"server-side"| C["@Pipeline<br/>MongoDB aggregation"]
+    C -->|"only matching events<br/>sent over the wire"| D{"@Filter<br/>Java predicate"}
+    D -->|"false"| X(["discarded"])
+    D -->|"true"| E["Handler invoked"]
 ```
 
 The following example is from the `PipelineFilterCapture` sample — it pre-filters by operation type server-side, then checks the order status application-side:
