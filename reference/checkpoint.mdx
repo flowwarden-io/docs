@@ -26,23 +26,14 @@ With the default configuration, a checkpoint is saved **after every event** and 
 
 | Attribute | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `strategy` | `CheckpointStrategy` | `MONGODB` | Storage backend for checkpoints |
 | `saveEveryN` | `int` | `1` | Save a checkpoint every N successfully processed events |
 | `saveIntervalSeconds` | `int` | `5` | Periodic checkpoint interval in seconds (heartbeat). Set to `0` to disable |
 | `startPosition` | `StartPosition` | `RESUME` | Where to start consuming when the stream starts |
 | `onHistoryLost` | `OnHistoryLost` | `FAIL` | Strategy when the saved resume token has expired from the oplog |
 
 <Note>
-  Checkpoints are stored in the `_fw_checkpoints` collection in your MongoDB database.
+  Checkpoints are stored in the `_fw_checkpoints` collection in your MongoDB database. The collection name is not configurable.
 </Note>
-
-### `strategy`
-
-Determines where checkpoints are persisted. Currently, only `MONGODB` is available.
-
-| Strategy | Description |
-|----------|-------------|
-| `MONGODB` | Dedicated MongoDB collection (default, recommended) |
 
 ### `saveEveryN`
 
@@ -120,8 +111,7 @@ The exception message includes the stream name, the last checkpoint timestamp, a
 
 ```java Imperative
 @ChangeStream(name = "order-stream", collection = "orders", documentType = Order.class)
-@Checkpoint(strategy = CheckpointStrategy.MONGODB, saveEveryN = 5,
-        saveIntervalSeconds = 10, startPosition = StartPosition.LATEST)
+@Checkpoint(saveEveryN = 5, saveIntervalSeconds = 10, startPosition = StartPosition.LATEST)
 public class OrderStreamHandler {
 
     @OnInsert
@@ -134,8 +124,7 @@ public class OrderStreamHandler {
 
 ```java Reactive
 @ChangeStream(name = "order-stream", collection = "orders", documentType = Order.class)
-@Checkpoint(strategy = CheckpointStrategy.MONGODB, saveEveryN = 5,
-        saveIntervalSeconds = 10, startPosition = StartPosition.LATEST)
+@Checkpoint(saveEveryN = 5, saveIntervalSeconds = 10, startPosition = StartPosition.LATEST)
 public class OrderStreamHandler {
 
     @OnInsert
@@ -186,6 +175,16 @@ sequenceDiagram
     FW->>CP: save(lastProcessedToken = E2)
 ```
 
+<Accordion title="Interaction with @Pipeline">
+
+When a `@Pipeline` is present, it filters events server-side, creating a gap between the actual oplog position and the last event your handler processed. The `lastSeenToken` tracks the oplog position independently (via periodic sampling), so on restart, MongoDB resumes from the most recent position — not from the last processed event.
+
+Without this mechanism, a restart would force MongoDB to re-scan the entire oplog from `lastProcessedToken`, potentially scanning tens of thousands of filtered-out events.
+
+See the [@Pipeline reference](/reference/pipeline#checkpoint-interaction) for details.
+
+</Accordion>
+
 ## Checkpoint Storage (SPI)
 
 The `CheckpointStore` interface is the SPI that backs `@Checkpoint`. The MongoDB implementation is auto-configured, but you can provide your own by registering a `CheckpointStore` bean:
@@ -203,10 +202,10 @@ public interface CheckpointStore {
 
 The framework ships with two auto-configured implementations:
 
-| Implementation | Module | When active |
-|----------------|--------|-------------|
-| `MongoCheckpointStore` | `flowwarden-stream-starter` | Imperative Spring Data MongoDB on classpath |
-| `ReactiveMongoCheckpointStore` | `flowwarden-stream-starter` | Reactive Spring Data MongoDB on classpath |
+| Implementation | When active |
+|----------------|-------------|
+| `MongoCheckpointStore` | Imperative mode (`flowwarden.default-mode=IMPERATIVE`) |
+| `ReactiveMongoCheckpointStore` | Reactive mode (`flowwarden.default-mode=REACTIVE`) |
 
 Both store checkpoints in the same `_fw_checkpoints` collection with the same document format, so switching between imperative and reactive mode is transparent.
 
@@ -215,23 +214,16 @@ Both store checkpoints in the same `_fw_checkpoints` collection with the same do
 ```java
 public record Checkpoint(
     String streamName,
-    String instanceId,
-    BsonDocument lastSeenToken,
-    Instant lastSeenTimestamp,
-    BsonDocument lastProcessedToken,
-    Instant lastProcessedTimestamp,
-    String filterHash,
+    String instanceId,              // nullable
+    BsonDocument lastSeenToken,     // nullable
+    Instant lastSeenTimestamp,      // nullable
+    BsonDocument lastProcessedToken,// nullable
+    Instant lastProcessedTimestamp, // nullable
     Map<String, Object> metadata
 ) {}
 ```
 
 </Accordion>
-
-## Configuration
-
-Checkpoint behavior is configured per stream via the `@Checkpoint` annotation attributes.
-There is no YAML/properties equivalent — this is by design to keep configuration co-located
-with the handler code.
 
 ## Best Practices
 
@@ -244,16 +236,6 @@ with the handler code.
   MongoDB **must** be configured as a Replica Set for Change Streams (and therefore checkpointing) to work. This applies to development environments as well. Testcontainers automatically provisions a single-node Replica Set for testing.
 </Warning>
 
-## Roadmap
-
-The following attributes are planned but not yet implemented:
-
-| Attribute | Description | Status |
-|-----------|-------------|--------|
-| `collection` | Custom collection name for checkpoint storage | TODO |
-| `dualCheckpoint` | Toggle dual-token checkpointing on/off | TODO |
-| `startAtTimestamp` | Start consuming from a specific ISO-8601 timestamp | TODO |
-
 ## See Also
 
 <CardGroup cols={2}>
@@ -263,10 +245,10 @@ The following attributes are planned but not yet implemented:
   <Card title="@ChangeStream" icon="database" href="/reference/change-stream">
     The main annotation for declaring Change Stream handlers
   </Card>
+  <Card title="@Pipeline" icon="diagram-project" href="/reference/pipeline">
+    Server-side filtering and its interaction with dual-token checkpointing
+  </Card>
   <Card title="@RetryPolicy" icon="rotate" href="/reference/retry-policy">
     Configure retry behavior for failed event processing
-  </Card>
-  <Card title="Configuration" icon="gear" href="/reference/configuration">
-    Full YAML configuration reference and resolution hierarchy
   </Card>
 </CardGroup>

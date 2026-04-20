@@ -208,12 +208,13 @@ When `@Filter` is used alone (without `@Pipeline`), there is no gap between `las
 `@Filter` can coexist with [`@Pipeline`](/reference/pipeline) on the same `@ChangeStream`,
 forming a **double filtering funnel**:
 
-```
-Oplog (all writes)
-  └─► Change Stream on collection
-        └─► @Pipeline (server-side)         ← reduces network traffic
-              └─► @Filter (application-side) ← complex Java logic
-                    └─► Handler
+```mermaid
+flowchart TD
+    A[("Oplog (all writes)")] -->|"implicit collection filter"| B["Change Stream on collection"]
+    B -->|"server-side"| C["@Pipeline<br/>MongoDB aggregation"]
+    C -->|"only matching events<br/>sent over the wire"| D{"@Filter<br/>Java predicate"}
+    D -->|"false"| X(["discarded"])
+    D -->|"true"| E["Handler invoked"]
 ```
 
 **Typical use case:** pre-filter `operationType = insert | update` and `status = PAID`
