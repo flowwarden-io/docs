@@ -131,6 +131,10 @@ flowchart TD
   </Tab>
 </Tabs>
 
+<Warning>
+**Change Stream pipelines scan the oplog, not a collection.** Unlike regular MongoDB queries, aggregation stages in a Change Stream pipeline cannot use indexes — MongoDB performs a COLLSCAN on the oplog to evaluate your `$match` filters. This is expected behavior, not a performance issue. Keep your pipeline stages lightweight (`$match`, `$project`) and avoid heavy operations like `$lookup` or `$group`. For complex filtering logic, use `@Filter` on the application side instead.
+</Warning>
+
 ---
 
 ## Dual Execution Mode
@@ -182,6 +186,7 @@ FlowWarden uses three internal collections in your database. You do not need to 
 |-----------|---------|
 | `_fw_checkpoints` | Stores resume tokens for each stream. Loaded on startup to resume from the last processed event. |
 | `_fw_dlq` | Dead Letter Queue. Failed events that exhausted all retry attempts are written here. |
+| `_fw_locks` | Distributed locks for `SINGLE_LEADER` deployment mode. Used for leader election and heartbeat coordination between instances. |
 
 <Note>
 All internal collections are prefixed with `_fw_` to avoid collisions with your application data. They are created with appropriate indexes on first use.
