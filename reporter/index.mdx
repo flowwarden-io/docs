@@ -13,10 +13,10 @@ The Reporter supports two independent modes that can run simultaneously:
 ```mermaid
 flowchart TD
     subgraph app["Your Application"]
-        core["Stream Core\n@ChangeStream\n@OnInsert ..."] -->|SPI| reporter["Reporter\nCollects metrics\nAggregates per-stream stats"]
+        core["Stream Core<br/>@ChangeStream<br/>@OnInsert ..."] -->|SPI| reporter["Reporter<br/>Collects metrics<br/>Aggregates per-stream stats"]
     end
-    reporter -->|HTTPS POST\nProtobuf| console["FlowWarden Console\nDashboard, Alerts\nRemote commands"]
-    reporter -->|Micrometer| prom["Prometheus / Grafana\n/actuator/prometheus"]
+    reporter -->|HTTPS POST<br/>Protobuf| console["FlowWarden Console<br/>Dashboard, Alerts<br/>Remote commands"]
+    reporter -->|Micrometer| prom["Prometheus / Grafana<br/>/actuator/prometheus"]
 ```
 
 | Mode | Activation | Prerequisites |
