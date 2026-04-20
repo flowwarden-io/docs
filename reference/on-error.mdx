@@ -256,7 +256,7 @@ FlowWarden validates `@OnError` methods at startup and will throw a `BeanCreatio
 | Rule | Error |
 |------|-------|
 | Return type is not `ErrorAction` | "must return ErrorAction" |
-| Wrong parameter count or types | "must have signature: ErrorAction method(Throwable ex, ChangeStreamContext<?> ctx)" |
+| Wrong parameter count or types | `must have signature: ErrorAction method(Throwable ex, ChangeStreamContext<?> ctx)` |
 | Multiple catch-all handlers | "has multiple catch-all @OnError methods. At most one is allowed" |
 | Duplicate exception types | "has duplicate @OnError for exception type: ..." |
 

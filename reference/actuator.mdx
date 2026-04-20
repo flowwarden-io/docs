@@ -226,6 +226,26 @@ The auto-configuration is conditional:
 - Requires `spring-boot-actuator` on the classpath (`@ConditionalOnClass(Endpoint.class)`)
 - Loads **after** `FlowWardenAutoConfiguration` to ensure `FlowWardenStreamManager` and `StreamRegistry` are available
 
+### Disabling
+
+Both beans can be disabled independently via standard Spring Boot properties:
+
+```yaml application.yml
+management:
+  # Disable the /actuator/flowwarden endpoint
+  endpoint:
+    flowwarden:
+      enabled: false
+  # Disable the FlowWarden health indicator
+  health:
+    flowwarden:
+      enabled: false
+```
+
+<Note>
+If you don't have `spring-boot-starter-actuator` in your dependencies, neither bean is created — no configuration needed.
+</Note>
+
 ## Kubernetes Integration
 
 ### Readiness Probe

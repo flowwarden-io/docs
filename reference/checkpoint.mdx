@@ -56,14 +56,18 @@ A periodic timer that saves the latest resume token at the specified interval, *
 @Checkpoint(saveIntervalSeconds = 0)
 ```
 
+<Tip>
+`saveEveryN` and `saveIntervalSeconds` are **independent and coexist**. In high-throughput scenarios, `saveEveryN` triggers most checkpoints. In low-throughput or idle periods, the periodic timer takes over to keep the checkpoint fresh. Both write to the same `_fw_checkpoints` document — whichever fires first wins, no conflict.
+</Tip>
+
 ### `startPosition`
 
 Determines where the stream starts consuming when it is first created or when no checkpoint exists.
 
 | Value | Description |
 |-------|-------------|
-| `RESUME` | Resume from the last persisted checkpoint. If no checkpoint exists, starts from the latest event. **(default)** |
-| `LATEST` | Ignore any existing checkpoint and start from the latest event. |
+| `RESUME` | Resume from the last persisted checkpoint (event-based or heartbeat). If no checkpoint exists (first-ever start, or `saveIntervalSeconds = 0` with no events processed yet), starts from now. **(default)** |
+| `LATEST` | Ignore any existing checkpoint and start from now. Useful to skip a backlog after a long outage. |
 
 ### `onHistoryLost`
 
