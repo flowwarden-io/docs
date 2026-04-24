@@ -194,18 +194,19 @@ db._fw_checkpoints.deleteOne({ _id: "order-stream" })
 <Accordion title="Exactly-once semantics">
 FlowWarden provides **at-least-once** delivery by default. A crash between processing and checkpointing causes the last few events to be reprocessed on restart.
 
-To approach exactly-once, save the checkpoint inside the same database transaction as your business write:
+To achieve exactly-once, use Spring's `@Transactional` combined with `ctx.saveCheckpointNow()` to commit your business writes and the checkpoint atomically:
 
 ```java
 @OnInsert
+@Transactional
 void onInsert(Order order, ChangeStreamContext<Order> ctx) {
-    // business write + checkpoint in one transaction
+    // business write + checkpoint in one MongoDB transaction
     mongoTemplate.save(order, "processed_orders");
-    ctx.saveCheckpointNow();  // explicit immediate checkpoint
+    ctx.saveCheckpointNow();  // included in the same transaction
 }
 ```
 
-`ctx.saveCheckpointNow()` forces an immediate checkpoint save outside the `saveEveryN` counter.
+See the [Transactions guide](/guides/transactions) for full setup instructions, constraints, and best practices.
 </Accordion>
 
 <Accordion title="Disabling checkpoint for dev/test">

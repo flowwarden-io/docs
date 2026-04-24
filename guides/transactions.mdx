@@ -1,0 +1,174 @@
+---
+title: "Transactions"
+description: "Use MongoDB transactions with Change Stream handlers for exactly-once processing semantics"
+icon: "lock"
+---
+
+By default, FlowWarden provides **at-least-once** delivery: if the application crashes between processing an event and saving the checkpoint, the event is replayed on restart. For most use cases (cache invalidation, notifications, projections), this is sufficient as long as your handler is idempotent.
+
+For critical streams where duplicate processing is unacceptable (e.g., billing, payments, inventory), you can achieve **exactly-once** semantics by wrapping your business writes and checkpoint save in a single MongoDB transaction.
+
+---
+
+## Prerequisites
+
+MongoDB transactions require:
+- A **replica set** (already required for Change Streams)
+- A `MongoTransactionManager` Spring bean in your application
+
+```java
+@Configuration
+public class MongoConfig {
+
+    @Bean
+    MongoTransactionManager transactionManager(MongoDatabaseFactory dbFactory) {
+        return new MongoTransactionManager(dbFactory);
+    }
+}
+```
+
+---
+
+## Exactly-once pattern
+
+Use Spring's `@Transactional` on your handler method combined with `ctx.saveCheckpointNow()`:
+
+```java
+@ChangeStream(documentType = Order.class)
+@Checkpoint(saveEveryN = 1)
+public class OrderProcessor {
+
+    @Autowired
+    private MongoTemplate mongoTemplate;
+
+    @OnInsert
+    @Transactional
+    void handle(Order order, ChangeStreamContext<Order> ctx) {
+        // 1. Business write — participates in the transaction
+        mongoTemplate.save(new ProcessedOrder(order), "processed_orders");
+
+        // 2. Checkpoint — participates in the SAME transaction
+        ctx.saveCheckpointNow();
+
+        // If this method completes normally:
+        //   -> both writes are committed atomically
+        // If an exception is thrown:
+        //   -> both writes are rolled back, event will be retried
+    }
+}
+```
+
+### How it works
+
+1. Spring's `@Transactional` opens a MongoDB session and binds it to the current thread
+2. All `MongoTemplate` operations on the same thread automatically use the bound session
+3. `ctx.saveCheckpointNow()` saves the checkpoint through `MongoTemplate` — it joins the same transaction
+4. On success, Spring commits both the business write and the checkpoint atomically
+5. On failure, Spring rolls back everything — the event will be redelivered on the next attempt
+
+<Note>
+  `ctx.saveCheckpointNow()` is required inside the handler. Without it, FlowWarden saves the checkpoint **after** the handler returns — outside the transaction boundary.
+</Note>
+
+---
+
+## When to use transactions
+
+<CardGroup cols={2}>
+  <Card title="Use transactions" icon="check">
+    - All handler writes go to MongoDB
+    - Duplicate processing has real consequences (double charges, wrong inventory)
+    - You need exactly-once guarantees
+    - You use `SINGLE_LEADER` deployment mode
+  </Card>
+  <Card title="Skip transactions" icon="xmark">
+    - Handler calls external APIs (HTTP, Kafka, email)
+    - Handler is naturally idempotent
+    - At-least-once is acceptable
+    - High-throughput streams where transaction overhead matters
+  </Card>
+</CardGroup>
+
+<Warning>
+  MongoDB transactions cannot roll back external side-effects (HTTP calls, message queue publishes, emails). If your handler performs external calls, transactions only protect the MongoDB writes — the side-effects will not be undone on rollback. Design these handlers to be idempotent instead.
+</Warning>
+
+---
+
+## Interaction with retry and DLQ
+
+Transactions work naturally with `@RetryPolicy` and `@DeadLetterQueue`:
+
+```java
+@ChangeStream(documentType = Order.class)
+@Checkpoint(saveEveryN = 1)
+@RetryPolicy(maxAttempts = 3)
+@DeadLetterQueue(ttlDays = 90)
+public class CriticalOrderProcessor {
+
+    @Autowired
+    private MongoTemplate mongoTemplate;
+
+    @OnInsert
+    @Transactional
+    void handle(Order order, ChangeStreamContext<Order> ctx) {
+        mongoTemplate.save(new ProcessedOrder(order), "processed_orders");
+        ctx.saveCheckpointNow();
+    }
+}
+```
+
+- Each retry attempt runs the handler in a **new transaction**
+- If the handler throws, the transaction is rolled back (business writes + checkpoint)
+- After all retries are exhausted, the event is sent to the DLQ **outside** any transaction
+
+---
+
+## Important constraints
+
+### `mongoTemplateRef` breaks transaction atomicity
+
+<Warning>
+  If your `@ChangeStream` uses `mongoTemplateRef` to point to a different `MongoTemplate`, the exactly-once guarantee **does not apply**.
+</Warning>
+
+Spring binds the transaction session to a specific `MongoDatabaseFactory`. The checkpoint store uses the **default** `MongoTemplate` from auto-configuration. If your handler uses a different template via `mongoTemplateRef`, the checkpoint save and the handler's writes use different database factories — they cannot participate in the same transaction.
+
+```java
+// This does NOT provide exactly-once:
+@ChangeStream(collection = "orders", mongoTemplateRef = "secondaryMongoTemplate")
+@Checkpoint(saveEveryN = 1)
+public class OrderProcessor {
+
+    @Autowired
+    @Qualifier("secondaryMongoTemplate")
+    private MongoTemplate secondaryMongoTemplate;
+
+    @OnInsert
+    @Transactional  // transaction on secondary factory
+    void handle(Order order, ChangeStreamContext<Order> ctx) {
+        secondaryMongoTemplate.save(...);  // secondary factory
+        ctx.saveCheckpointNow();           // default factory — NOT in the same transaction
+    }
+}
+```
+
+### `saveEveryN` must be 1
+
+For transactional exactly-once, use `@Checkpoint(saveEveryN = 1)`. With `saveEveryN > 1`, FlowWarden skips checkpoint saves between batches — events processed between checkpoints would not have transactional guarantees on crash recovery.
+
+### Handler must call `saveCheckpointNow()`
+
+FlowWarden's automatic checkpoint save happens **after** the handler returns — outside the `@Transactional` boundary. You must explicitly call `ctx.saveCheckpointNow()` inside the handler to include the checkpoint in the transaction. If you forget, FlowWarden falls back to at-least-once (the checkpoint saves outside the transaction).
+
+---
+
+## Comparison with at-least-once
+
+| Aspect | At-least-once (default) | Exactly-once (transactional) |
+|--------|------------------------|------------------------------|
+| **Delivery guarantee** | Events may be redelivered on crash | Each event processed exactly once |
+| **Handler requirement** | Must be idempotent | No idempotency needed (for MongoDB writes) |
+| **Performance** | No transaction overhead | Slight overhead from MongoDB sessions |
+| **External side-effects** | Handled naturally | Not protected by transaction |
+| **Configuration** | `@Checkpoint` only | `@Checkpoint` + `MongoTransactionManager` + `@Transactional` + `saveCheckpointNow()` |
