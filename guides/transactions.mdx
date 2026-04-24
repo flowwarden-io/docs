@@ -44,19 +44,40 @@ public class OrderProcessor {
     @OnInsert
     @Transactional
     void handle(Order order, ChangeStreamContext<Order> ctx) {
-        // 1. Business write — participates in the transaction
         mongoTemplate.save(new ProcessedOrder(order), "processed_orders");
-
-        // 2. Checkpoint — participates in the SAME transaction
         ctx.saveCheckpointNow();
-
-        // If this method completes normally:
-        //   -> both writes are committed atomically
-        // If an exception is thrown:
-        //   -> both writes are rolled back, event will be retried
     }
 }
 ```
+
+**On success:** both the business write and the checkpoint are committed atomically.
+
+**On exception:** Spring rolls back the transaction — neither the business write nor the checkpoint are persisted. By default, FlowWarden logs the error and moves on to the next event. The failed event is **lost** unless you configure retry and DLQ:
+
+```java
+@ChangeStream(documentType = Order.class)
+@Checkpoint(saveEveryN = 1)
+@RetryPolicy(maxAttempts = 3)
+@DeadLetterQueue
+public class OrderProcessor {
+
+    @Autowired
+    private MongoTemplate mongoTemplate;
+
+    @OnInsert
+    @Transactional
+    void handle(Order order, ChangeStreamContext<Order> ctx) {
+        mongoTemplate.save(new ProcessedOrder(order), "processed_orders");
+        ctx.saveCheckpointNow();
+        // On failure: @RetryPolicy retries in a new transaction,
+        // then @DeadLetterQueue captures the event if all retries fail
+    }
+}
+```
+
+<Tip>
+  For critical streams using transactions, always combine `@RetryPolicy` and `@DeadLetterQueue` to avoid losing events on failure. See the [Retry & DLQ guide](/guides/retry-and-dlq) for configuration details.
+</Tip>
 
 ### How it works
 
