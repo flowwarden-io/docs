@@ -32,7 +32,8 @@
               "guides/filtering-events",
               "guides/checkpoint-resume",
               "guides/retry-and-dlq",
-              "guides/transactions"
+              "guides/transactions",
+              "guides/threading-and-scaling"
             ]
           }
         ]
