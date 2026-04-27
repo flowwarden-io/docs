@@ -53,6 +53,24 @@
         ]
       },
       {
+        "tab": "Javers",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "guides/javers-integration"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/javers-stream",
+              "reference/javers-handlers"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Reporter",
         "groups": [
           {
