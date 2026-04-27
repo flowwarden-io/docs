@@ -9,8 +9,8 @@
   },
   "favicon": "/favicon.png",
   "logo": {
-    "light": "/logo/logo-light.png",
-    "dark": "/logo/logo-dark.png"
+    "light": "/logo/V1.svg",
+    "dark": "/logo/V1.svg"
   },
   "navigation": {
     "tabs": [
@@ -24,8 +24,7 @@
               "quickstart",
               "concepts/how-it-works"
             ]
-          },
-          {
+          }, {
             "group": "Guides",
             "pages": [
               "guides/imperative-vs-reactive",
