@@ -59,19 +59,6 @@ For the defaults (`initialDelay = "500ms"`, `multiplier = 2.0`, `maxDelay = "30s
 | 7 | 16s |
 | 8+ | 30s (capped) |
 
-## YAML Configuration
-
-Global retry defaults can be set in `application.yml`. Annotation attributes override these values per stream.
-
-```yaml
-flowwarden:
-  stream:
-    retry:
-      max-attempts: 3
-      initial-delay: 1s
-      multiplier: 2.0
-      max-delay: 30s
-```
 
 ## See Also
 
