@@ -1,0 +1,71 @@
+---
+title: "@JaversStream"
+description: "Declare a Javers audit stream handler for a specific entity type."
+icon: "clock-rotate-left"
+---
+
+The `@JaversStream` annotation declares a handler class that watches Javers audit snapshots for changes to a specific entity type. It is the entry point for the FlowWarden Javers integration module.
+
+## Basic Usage
+
+```java
+@JaversStream(entityType = Product.class)
+public class ProductAuditHandler {
+
+    @OnInitial
+    void onCreated(Product product, JaversChangeContext<Product> ctx) {
+        log.info("Product created: {}", product.getName());
+    }
+
+    @OnUpdate
+    void onUpdated(Product product, JaversChangeContext<Product> ctx) {
+        log.info("Product updated: {} — changed: {}", product.getName(),
+            ctx.getChangedProperties());
+    }
+}
+```
+
+<Note>
+  `@JaversStream` requires the `flowwarden-javers` module on your classpath. The auto-configuration activates only when Javers is detected.
+</Note>
+
+## Attributes Reference
+
+| Attribute | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `entityType` | `Class<?>` | *(required)* | The domain entity type to watch. FlowWarden filters snapshots by this type's fully qualified class name. |
+| `name` | `String` | `""` (kebab-case of class name) | Unique stream name. Used in logs, checkpoints, and metrics. |
+| `snapshotCollection` | `String` | `""` (auto-detect) | Javers snapshot collection name. If empty, resolved from `javers.snapshotCollectionName` property, then defaults to `jv_snapshots`. |
+| `database` | `String` | `""` (Spring default) | MongoDB database name. |
+| `autoStart` | `boolean` | `true` | Whether the stream starts automatically on application startup. |
+
+## Compatible Annotations
+
+The following FlowWarden annotations can be combined with `@JaversStream`:
+
+| Annotation | Purpose |
+|------------|---------|
+| `@Checkpoint` | Resume token persistence for crash recovery |
+| `@RetryPolicy` | Exponential backoff retry on handler failure |
+| `@DeadLetterQueue` | Route failed events to a DLQ collection |
+| `@Filter` | Application-side event filtering |
+| `@Pipeline` | Additional server-side MongoDB filtering (added on top of the automatic entity filter) |
+
+## Handler Annotations
+
+| Annotation | Javers Type | Description |
+|------------|-------------|-------------|
+| [`@OnInitial`](/reference/javers-handlers) | `INITIAL` | First snapshot — entity creation |
+| [`@OnUpdate`](/reference/javers-handlers) | `UPDATE` | Subsequent modifications |
+| [`@OnTerminal`](/reference/javers-handlers) | `TERMINAL` | Entity deletion |
+
+## How It Works Internally
+
+1. `JaversStreamBeanPostProcessor` discovers classes annotated with `@JaversStream`
+2. Creates a `ChangeStreamDefinition` watching the Javers snapshot collection
+3. Registers it with FlowWarden's `StreamRegistry`
+4. On each snapshot insert, an internal dispatcher:
+   - Filters by `globalId.entity` matching the configured `entityType`
+   - Deserializes the `state` field into the domain object via Spring's `MongoConverter`
+   - Reconstructs the `CdoSnapshot` via Javers' JSON converter
+   - Dispatches to the matching `@OnInitial`, `@OnUpdate`, or `@OnTerminal` handler

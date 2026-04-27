@@ -1,0 +1,83 @@
+---
+title: "@OnInitial / @OnUpdate / @OnTerminal"
+description: "Typed handler annotations for Javers audit snapshot lifecycle events."
+icon: "code"
+---
+
+These annotations mark methods as handlers for specific Javers snapshot types within a [`@JaversStream`](/reference/javers-stream) class.
+
+## Overview
+
+| Annotation | Javers `SnapshotType` | When it fires |
+|------------|----------------------|---------------|
+| `@OnInitial` | `INITIAL` | First time Javers audits an entity — typically on creation |
+| `@OnUpdate` | `UPDATE` | Subsequent modifications to an already-tracked entity |
+| `@OnTerminal` | `TERMINAL` | Entity deleted from the audited repository |
+
+## Supported Signatures
+
+All three annotations support the same signature styles:
+
+### Entity + Context
+
+```java
+@OnInitial
+void handle(Product product, JaversChangeContext<Product> ctx) {
+    log.info("Created {} by {}", product.getName(),
+        ctx.getCommitMetadata().getAuthor());
+}
+```
+
+### Context Only
+
+```java
+@OnTerminal
+void handle(JaversChangeContext<Product> ctx) {
+    log.info("Deleted entity {}", ctx.getEntityId());
+}
+```
+
+### Entity Only
+
+```java
+@OnUpdate
+void handle(Product product) {
+    log.info("Updated: {}", product);
+}
+```
+
+## Notes
+
+- Each `@JaversStream` class can have **at most one** handler per snapshot type
+- If no handler matches the snapshot type, the event is silently skipped
+- For `@OnTerminal`, the entity represents the **last known state** before deletion
+- The `JaversChangeContext` exposes both the native Javers `CdoSnapshot` and FlowWarden event metadata
+
+## Example
+
+```java
+@JaversStream(entityType = Order.class)
+@Checkpoint(saveEveryN = 1)
+@RetryPolicy(maxAttempts = 3)
+@DeadLetterQueue
+public class OrderAuditHandler {
+
+    @OnInitial
+    void onCreated(Order order, JaversChangeContext<Order> ctx) {
+        notificationService.sendNewOrderAlert(order);
+    }
+
+    @OnUpdate
+    void onUpdated(Order order, JaversChangeContext<Order> ctx) {
+        if (ctx.getChangedProperties().contains("status")) {
+            notificationService.sendStatusChange(order, ctx.getVersion());
+        }
+    }
+
+    @OnTerminal
+    void onDeleted(JaversChangeContext<Order> ctx) {
+        auditLog.recordDeletion(ctx.getEntityId(),
+            ctx.getCommitMetadata().getAuthor());
+    }
+}
+```
