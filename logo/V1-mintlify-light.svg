@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 180 24" width="180" height="24" fill="none">
+  <defs>
+    <linearGradient id="linearGradient4">
+      <stop style="stop-color:#093375;stop-opacity:1;" offset="0" id="stop4"></stop>
+      <stop style="stop-color:#529889;stop-opacity:1;" offset="1" id="stop5"></stop>
+    </linearGradient>
+    <linearGradient id="linearGradient2">
+      <stop style="stop-color:#093375;stop-opacity:1;" offset="0" id="stop2"></stop>
+      <stop style="stop-color:#529889;stop-opacity:1;" offset="1" id="stop3"></stop>
+    </linearGradient>
+    <linearGradient id="linearGradient1548">
+      <stop style="stop-color:#093375;stop-opacity:1;" offset="0" id="stop1548"></stop>
+      <stop style="stop-color:#093375;stop-opacity:0;" offset="1" id="stop1549"></stop>
+    </linearGradient>
+    <linearGradient id="linearGradient1543">
+      <stop style="stop-color:#093375;stop-opacity:1;" offset="0" id="stop1543"></stop>
+      <stop style="stop-color:#529889;stop-opacity:1;" offset="1" id="stop1544"></stop>
+    </linearGradient>
+    <linearGradient id="linearGradient1540">
+      <stop style="stop-color:#093375;stop-opacity:1;" offset="0" id="stop1540"></stop>
+      <stop style="stop-color:#529889;stop-opacity:1;" offset="1" id="stop1541"></stop>
+    </linearGradient>
+    <linearGradient xlink:href="#linearGradient1540" id="linearGradient1541" x1="144.63095" y1="506.88852" x2="537.64911" y2="279.97937" gradientUnits="userSpaceOnUse" gradientTransform="matrix(1.0152231,0,0,1.0116859,-6.7149817,-8.0184742)"></linearGradient>
+    <linearGradient xlink:href="#linearGradient1543" id="linearGradient1544" x1="110.9511" y1="551.99103" x2="690.49542" y2="217.39098" gradientUnits="userSpaceOnUse"></linearGradient>
+    <linearGradient xlink:href="#linearGradient1548" id="linearGradient1549" x1="127.21379" y1="542.5053" x2="556.89477" y2="542.5053" gradientUnits="userSpaceOnUse"></linearGradient>
+    <meshgradient id="meshgradient1551" gradientUnits="userSpaceOnUse" x="132.64371" y="133.65083" gradientTransform="matrix(1.0152231,0,0,1.0116859,-6.7149817,-8.0184742)">
+      <meshrow id="meshrow1551">
+        <meshpatch id="meshpatch1551">
+          <stop path="c 179.936,0  359.872,0  539.809,0" style="stop-color:#ffffff;stop-opacity:1" id="stop1551"></stop>
+          <stop path="c 0,184.171  0,368.343  0,552.514" style="stop-color:#093375;stop-opacity:1" id="stop1552"></stop>
+          <stop path="c -179.936,0  -359.872,0  -539.809,0" style="stop-color:#ffffff;stop-opacity:1" id="stop1553"></stop>
+          <stop path="c 0,-184.171  0,-368.343  0,-552.514" style="stop-color:#093375;stop-opacity:1" id="stop1554"></stop>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+    <linearGradient xlink:href="#linearGradient2" id="linearGradient3" x1="260.40335" y1="395.17587" x2="538.45911" y2="234.6403" gradientUnits="userSpaceOnUse"></linearGradient>
+    <linearGradient xlink:href="#linearGradient4" id="linearGradient5" x1="374.5162" y1="308.79419" x2="425.52023" y2="279.34705" gradientUnits="userSpaceOnUse"></linearGradient>
+  </defs>
+  <g transform="translate(-2.1176 -1.5882) scale(0.035294)"><path style="fill:url(#linearGradient1541);stroke:url(#meshgradient1551);stroke-width:0;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none" d="m 194.10423,407.6601 c -12.17048,-66.97745 -27.14878,-133.37385 -10.13034,-176.9603 210.45012,-75.61217 222.61142,-74.05341 433.22127,0 45.74757,161.77895 -58.54174,313.67208 -216.90859,397.26995 -39.70829,-10.48537 -67.38564,-31.62767 -92.96082,-54.63204 l -51.84354,22.5654 c 34.13407,43.17974 93.7019,63.12641 145.40027,90.26164 C 573.5031,601.41095 711.44387,467.91739 667.84689,197.44551 468.99902,100.6374 334.3464,107.73883 137.49347,195.0702 c -14.70857,103.08816 -12.49044,134.78972 7.15084,232.78 29.3068,-10.98853 38.59973,-15.32902 49.45992,-20.1901 z" id="path1535"></path><ellipse style="fill:url(#linearGradient5);fill-opacity:1;stroke:#386e6e;stroke-width:0;stroke-dasharray:none;stroke-opacity:1" id="path1537" cx="400.01822" cy="294.07062" rx="29.447168" ry="28.566717"></ellipse><path style="fill:#69b5d4;fill-opacity:1;stroke:#69b5d4;stroke-width:0;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1" d="M 94.20825,501.85702 C 311.19473,349.79538 377.26939,498.34022 569.35826,388.57234 441.43219,547.56162 297.184,401.84273 125.27327,550.15415 113.52627,532.22528 99.730781,518.22978 94.20825,501.85702 Z" id="path1538"></path><path style="fill:#093375;fill-opacity:1;stroke:url(#linearGradient1549);stroke-width:0;stroke-linecap:butt;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1" d="M 133.82854,574.64097 C 287.63407,430.58947 394.51376,555.81321 550.28182,449.32346 431.73664,614.78138 273.82086,458.06369 193.11224,635.68556 171.45585,617.23252 152.38814,596.1908 133.82854,574.64097 Z" id="path1539"></path><path style="fill:url(#linearGradient3);fill-opacity:1;stroke:#2f606a;stroke-width:0;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1" d="m 358.34352,240.95006 c -49.27418,8.46494 -78.9207,31.39388 -119.44784,69.55563 103.2824,100.07109 209.96553,109.00268 321.0711,-0.58697 -61.84169,-58.68305 -78.64884,-54.22772 -115.63255,-67.20775 21.59438,25.06025 19.32,37.17296 19.55659,57.28675 0.28398,24.14229 -23.61674,57.44695 -64.70982,57.00584 -35.82565,-0.38458 -63.81797,-30.96332 -61.56813,-59.79116 1.47467,-18.89529 -2.71286,-32.30782 20.73065,-56.26234 z" id="path1540"></path><path style="display:inline;opacity:1;fill:none;fill-opacity:0;stroke:url(#linearGradient1544);stroke-width:13.23;stroke-dasharray:none;stroke-opacity:1" id="path1534" d="M 119.93923,553.57537 A 327.98505,326.76941 0 0 1 225.88087,108.22296 327.98505,326.76941 0 0 1 674.83118,205.25019 327.98505,326.76941 0 0 1 586.03195,654.30742 327.98505,326.76941 0 0 1 133.69098,574.42666"></path></g>
+  <text x="32" y="18" font-family="&#39;Bahnschrift Condensed&#39;, &#39;Bahnschrift&#39;, &#39;Inter&#39;, system-ui, -apple-system, sans-serif" font-size="20" font-weight="600" font-stretch="condensed" letter-spacing="-0.2" fill="#11224e">FlowWarden</text>
+</svg>
